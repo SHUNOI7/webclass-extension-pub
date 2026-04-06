@@ -190,29 +190,32 @@
                 try {
                     const url = `/webclass/course.php/${c.id}/${acsVal ? '?acs_=' + acsVal : ''}`;
                     const resp = await fetch(url, { credentials: 'include' });
-                    if (!resp.ok) return [];
+                    if (!resp.ok) { console.log('[WC unread] fetch failed', c.name, resp.status); return []; }
                     const doc = new DOMParser().parseFromString(await resp.text(), 'text/html');
+                    const allEls = doc.querySelectorAll('div.cl-contentsList_content');
+                    console.log(`[WC unread] ${c.name}: ${allEls.length} items total`);
                     const items = [];
 
-                    doc.querySelectorAll('div.cl-contentsList_content').forEach(el => {
+                    allEls.forEach(el => {
                         const category = el.querySelector('.cl-contentsList_categoryLabel')?.textContent?.trim() || '';
-                        if (EXCLUDED_CATS.has(category)) return;
+                        const titleEl = el.querySelector('h4 a[href*="set_contents_id"]');
+                        const titleText = titleEl?.textContent?.trim() || '(no title)';
+                        if (EXCLUDED_CATS.has(category)) { console.log(`[WC unread]   SKIP(cat=${category}) ${titleText}`); return; }
 
-                        // 利用回数リンクがあれば既アクセス → スキップ
-                        if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) return;
+                        const hasAccess = [...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent));
+                        if (hasAccess) { console.log(`[WC unread]   SKIP(accessed) ${titleText}`); return; }
 
-                        // 利用可能期間をパース
                         const periodText = el.querySelector('.cm-contentsList_contentDetailListItemData')?.textContent?.trim() || '';
                         const dates = periodText.match(/(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/g);
-                        if (!dates || dates.length < 2) return;
+                        if (!dates || dates.length < 2) { console.log(`[WC unread]   SKIP(no period: "${periodText}") ${titleText}`); return; }
                         const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
                         const startDate = new Date(toISO(dates[0]));
                         const endDate   = new Date(toISO(dates[1]));
-                        if (now < startDate || now > endDate) return;
+                        if (now < startDate || now > endDate) { console.log(`[WC unread]   SKIP(out of period) ${titleText}`); return; }
 
-                        const titleEl = el.querySelector('h4 a[href*="set_contents_id"]');
-                        if (!titleEl) return;
+                        if (!titleEl) { console.log(`[WC unread]   SKIP(no title link) ${titleText}`); return; }
 
+                        console.log(`[WC unread]   ADD(cat=${category}) ${titleText}`);
                         items.push({
                             title:      titleEl.textContent.trim(),
                             href:       titleEl.getAttribute('href'),
@@ -222,7 +225,7 @@
                         });
                     });
                     return items;
-                } catch (_) { return []; }
+                } catch (e) { console.log('[WC unread] error', c.name, e); return []; }
             }));
 
             const data = lists.flat().sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
