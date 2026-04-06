@@ -23,16 +23,19 @@
         return;
     }
 
-    // モバイル版：h2.wcl_pageMainTitle を監視
-    if (location.pathname.includes('mbl.php/textbooks')) {
+    // 全ページ共通：h2.wcl_pageMainTitle が出たら保存（URL問わず）
+    // → mbl.php/textbooks はもちろん、小さいウィンドウ時の別レイアウトにも対応
+    {
         const syncTitle = () => {
             const h2 = document.querySelector('h2.wcl_pageMainTitle');
             if (h2 && h2.textContent.trim()) saveChapterTitle(h2.textContent);
         };
         syncTitle();
         new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
-        return;
     }
+
+    // mbl.php/textbooks は PDF パスワード・サイドバー処理不要なので終了
+    if (location.pathname.includes('mbl.php/textbooks')) return;
 
     // コースページから courseId を保存
     const coursePageMatch = location.pathname.match(/\/course\.php\/([a-f0-9]+)\//);

@@ -17,7 +17,7 @@
         if (title && title.trim()) localStorage.setItem('wc-current-chapter', title.trim());
     };
 
-    // PC版：章リストフレーム
+    // PC版：章リストフレーム（クリックで章切り替え）
     if (location.pathname.includes('txtbk_show_chapter.php')) {
         const attachListeners = () => {
             document.querySelectorAll('h2').forEach(h2 => {
@@ -33,8 +33,9 @@
         }
     }
 
-    // モバイル版：h2.wcl_pageMainTitle を監視
-    if (location.pathname.includes('mbl.php/textbooks')) {
+    // 全ページ共通：h2.wcl_pageMainTitle が出たら保存（URL問わず）
+    // → mbl.php/textbooks はもちろん、小さいウィンドウ時の別レイアウトにも対応
+    {
         const syncTitle = () => {
             const h2 = document.querySelector('h2.wcl_pageMainTitle');
             if (h2 && h2.textContent.trim()) saveChapterTitle(h2.textContent);
@@ -43,27 +44,37 @@
         new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
     }
 
-    // ── ダウンロードボタンのインターセプト（fetch + Blob でファイル名付きDL）──
+    // ── ダウンロードのインターセプト（fetch + Blob でファイル名付きDL）──
     // @grant none のため PDFViewerApplication に直接アクセス可能
     document.addEventListener('click', async e => {
-        const btn = e.target.closest('#download');
-        if (!btn) return;
+        // PDF.js の #download ボタン、または直接ファイルリンク（.pdf/.pptx 等）
+        const pdfBtn    = e.target.closest('#download');
+        const directLink = e.target.closest('a[href]');
 
-        let pdfUrl;
-        try {
-            pdfUrl = window.PDFViewerApplication?.url || window.PDFViewerApplication?.baseUrl;
-        } catch (_) {}
-        if (!pdfUrl) return;
+        let fileUrl = null;
+        if (pdfBtn) {
+            try { fileUrl = window.PDFViewerApplication?.url || window.PDFViewerApplication?.baseUrl; } catch (_) {}
+        } else if (directLink) {
+            const href = directLink.href || '';
+            if (/\.(pdf|pptx?|docx?|xlsx?)(\?|$)/i.test(href) && href.includes('gymnast15.med.kagawa-u.ac.jp')) {
+                fileUrl = href;
+            }
+        }
+        if (!fileUrl) return;
 
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        const raw   = localStorage.getItem('wc-current-chapter') || 'document';
-        const safe  = raw.replace(/[/\\:*?"<>|]/g, '-').trim();
-        const ext   = pdfUrl.split('?')[0].split('.').pop().toLowerCase() || 'pdf';
+        // タイトル：localStorage → 現ページの h2 → fallback
+        const raw  = localStorage.getItem('wc-current-chapter')
+                  || document.querySelector('h2.wcl_pageMainTitle, h2')?.textContent?.trim()
+                  || 'document';
+        const safe = raw.replace(/[/\\:*?"<>|]/g, '-').trim();
+        const ext  = fileUrl.split('?')[0].split('.').pop().toLowerCase() || 'pdf';
 
         try {
-            const resp = await fetch(pdfUrl, { credentials: 'include' });
+            const resp = await fetch(fileUrl, { credentials: 'include' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const blob = await resp.blob();
             const url  = URL.createObjectURL(blob);
             const a    = document.createElement('a');
@@ -73,10 +84,9 @@
             a.click();
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(url), 2000);
-        } catch (err) {
-            // フォールバック：元のダウンロードを再実行
-            btn.removeEventListener('click', arguments.callee, true);
-            btn.click();
+        } catch (_) {
+            // フォールバック：元の動作に戻す
+            if (directLink) { directLink.click(); }
         }
     }, true);
 
