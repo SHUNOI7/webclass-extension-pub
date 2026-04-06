@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      3.2
-// @description  時間割グリッド表示・未提出課題一覧・PDFパスワード自動入力
+// @version      3.3
+// @description  時間割グリッド表示・未提出課題一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @connect      gist.githubusercontent.com
 // @grant        none
@@ -11,6 +11,74 @@
 
 (function () {
     'use strict';
+
+    // ── 講義資料ダウンロード時のファイル名設定（localStorage版）────────
+    const saveChapterTitle = title => {
+        if (title && title.trim()) localStorage.setItem('wc-current-chapter', title.trim());
+    };
+
+    // PC版：章リストフレーム
+    if (location.pathname.includes('txtbk_show_chapter.php')) {
+        const attachListeners = () => {
+            document.querySelectorAll('h2').forEach(h2 => {
+                h2.addEventListener('click', () => saveChapterTitle(h2.textContent));
+            });
+            const first = document.querySelector('h2');
+            if (first) saveChapterTitle(first.textContent);
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachListeners);
+        } else {
+            attachListeners();
+        }
+    }
+
+    // モバイル版：h2.wcl_pageMainTitle を監視
+    if (location.pathname.includes('mbl.php/textbooks')) {
+        const syncTitle = () => {
+            const h2 = document.querySelector('h2.wcl_pageMainTitle');
+            if (h2 && h2.textContent.trim()) saveChapterTitle(h2.textContent);
+        };
+        syncTitle();
+        new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
+    }
+
+    // ── ダウンロードボタンのインターセプト（fetch + Blob でファイル名付きDL）──
+    // @grant none のため PDFViewerApplication に直接アクセス可能
+    document.addEventListener('click', async e => {
+        const btn = e.target.closest('#download');
+        if (!btn) return;
+
+        let pdfUrl;
+        try {
+            pdfUrl = window.PDFViewerApplication?.url || window.PDFViewerApplication?.baseUrl;
+        } catch (_) {}
+        if (!pdfUrl) return;
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const raw   = localStorage.getItem('wc-current-chapter') || 'document';
+        const safe  = raw.replace(/[/\\:*?"<>|]/g, '-').trim();
+        const ext   = pdfUrl.split('?')[0].split('.').pop().toLowerCase() || 'pdf';
+
+        try {
+            const resp = await fetch(pdfUrl, { credentials: 'include' });
+            const blob = await resp.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url;
+            a.download = safe + '.' + ext;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        } catch (err) {
+            // フォールバック：元のダウンロードを再実行
+            btn.removeEventListener('click', arguments.callee, true);
+            btn.click();
+        }
+    }, true);
 
     // コースページから courseId を保存
     const coursePageMatch = location.pathname.match(/\/course\.php\/([a-f0-9]+)\//);
