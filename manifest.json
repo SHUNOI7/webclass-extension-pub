@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "WebClass 改善",
+  "version": "3.2",
+  "description": "時間割グリッド表示・未提出課題一覧",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gymnast15.med.kagawa-u.ac.jp/webclass/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "permissions": [
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://gist.githubusercontent.com/*"
+  ]
+}

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>WebClass グリッド 概形モック</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; background: #f5f5f5; }
+  h2 { font-size: 15px; color: #555; margin: 0 0 8px; }
+
+  .period-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tab { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px; background: #fff; }
+  .tab.active { background: #333; color: #fff; border-color: #333; }
+
+  table { border-collapse: collapse; width: 100%; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  th, td { border: 1px solid #e0e0e0; padding: 0; text-align: center; vertical-align: middle; }
+  th { background: #f0f4f8; font-size: 12px; color: #555; padding: 8px 4px; font-weight: normal; }
+  td { height: 70px; width: 16%; font-size: 12px; }
+  td.day { width: 4%; font-weight: bold; background: #f0f4f8; color: #333; }
+  td.empty { background: #fafafa; }
+
+  .cell {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; padding: 4px;
+    font-size: 12px; font-weight: bold; line-height: 1.4;
+    cursor: pointer; transition: filter .15s;
+  }
+  .cell:hover { filter: brightness(.92); }
+
+  /* 科目カラー（モノトーン） */
+  .c-anatomy2    { background: #2a2a2a; color: #fff; }
+  .c-anatomy1    { background: #444;    color: #fff; }
+  .c-biochem     { background: #555;    color: #fff; }
+  .c-physio1     { background: #6e6e6e; color: #fff; }
+  .c-physio2     { background: #7a7a7a; color: #fff; }
+  .c-molbio      { background: #888;    color: #fff; }
+  .c-molgen      { background: #949494; color: #fff; }
+  .c-cell        { background: #a8a8a8; color: #fff; }
+  .c-chemii      { background: #b4b4b4; color: #222; }
+  .c-behavior    { background: #bdbdbd; color: #222; }
+  .c-ethics      { background: #c8c8c8; color: #222; }
+  .c-research    { background: #d0d0d0; color: #222; }
+  .c-patient     { background: #d8d8d8; color: #222; }
+  .c-society     { background: #e0e0e0; color: #222; }
+  .c-early       { background: #e8e8e8; color: #444; }
+  .c-english     { background: #f0f0f0; color: #666; }
+</style>
+</head>
+<body>
+
+<div class="period-tabs">
+  <div class="tab active" onclick="show(0)">前期① 4/1〜5/29</div>
+  <div class="tab" onclick="show(1)">前期② 6/1〜7/24</div>
+  <div class="tab" onclick="show(2)">後期① 9/30〜11/20</div>
+  <div class="tab" onclick="show(3)">後期② 11/24〜2/5</div>
+</div>
+
+<!-- 前期① -->
+<div id="p0">
+<table>
+  <tr>
+    <th></th>
+    <th>Ⅰ 8:50〜10:20</th>
+    <th>Ⅱ 10:30〜12:00</th>
+    <th>Ⅲ 13:00〜14:30</th>
+    <th>Ⅳ 14:40〜16:10</th>
+    <th>Ⅴ 16:20〜17:50</th>
+  </tr>
+  <tr>
+    <td class="day">月</td>
+    <td><div class="cell c-molgen">分子遺伝学</div></td>
+    <td><div class="cell c-chemii">医用化学Ⅱ</div></td>
+    <td colspan="3"><div class="cell c-anatomy2">解剖学Ⅱ（骨学）〜4/20<br>生理学Ⅰ 4/27〜</div></td>
+  </tr>
+  <tr>
+    <td class="day">火</td>
+    <td><div class="cell c-molgen">分子遺伝学</div></td>
+    <td><div class="cell c-chemii">医用化学Ⅱ</div></td>
+    <td colspan="3"><div class="cell c-anatomy2">解剖学Ⅱ（骨学・組織学）</div></td>
+  </tr>
+  <tr>
+    <td class="day">水</td>
+    <td><div class="cell c-molbio">分子生物学</div></td>
+    <td><div class="cell c-molbio">分子生物学</div></td>
+    <td colspan="2"><div class="cell c-behavior">行動科学とチーム医療</div></td>
+    <td class="empty"></td>
+  </tr>
+  <tr>
+    <td class="day">木</td>
+    <td><div class="cell c-cell">細胞生物学</div></td>
+    <td><div class="cell c-physio1">生理学Ⅰ</div></td>
+    <td colspan="3"><div class="cell c-anatomy2">解剖学Ⅱ（骨学・組織学）</div></td>
+  </tr>
+  <tr>
+    <td class="day">金</td>
+    <td><div class="cell c-english">英語（全学共通）</div></td>
+    <td><div class="cell c-cell">細胞生物学</div></td>
+    <td colspan="2"><div class="cell c-early">早期医学実習Ⅱ</div></td>
+    <td class="empty"></td>
+  </tr>
+</table>
+</div>
+
+<!-- 前期② -->
+<div id="p1" style="display:none">
+<table>
+  <tr>
+    <th></th>
+    <th>Ⅰ 8:50〜10:20</th>
+    <th>Ⅱ 10:30〜12:00</th>
+    <th>Ⅲ 13:00〜14:30</th>
+    <th>Ⅳ 14:40〜16:10</th>
+    <th>Ⅴ 16:20〜17:50</th>
+  </tr>
+  <tr>
+    <td class="day">月</td>
+    <td colspan="2"><div class="cell c-biochem">生化学</div></td>
+    <td colspan="2"><div class="cell c-physio1">生理学Ⅰ（〜6/29）</div></td>
+    <td class="empty"></td>
+  </tr>
+  <tr>
+    <td class="day">火</td>
+    <td><div class="cell c-molgen">分子遺伝学（補講）</div></td>
+    <td colspan="4"><div class="cell c-anatomy1">解剖学Ⅰ</div></td>
+  </tr>
+  <tr>
+    <td class="day">水</td>
+    <td><div class="cell c-molbio">分子生物学</div></td>
+    <td><div class="cell c-molbio">分子生物学</div></td>
+    <td colspan="2"><div class="cell c-behavior">行動科学とチーム医療</div></td>
+    <td class="empty"></td>
+  </tr>
+  <tr>
+    <td class="day">木</td>
+    <td><div class="cell c-molgen">分子遺伝学（補講）</div></td>
+    <td colspan="4"><div class="cell c-anatomy2">解剖学Ⅱ（組織学）</div></td>
+  </tr>
+  <tr>
+    <td class="day">金</td>
+    <td><div class="cell c-english">英語（全学共通）</div></td>
+    <td><div class="cell c-cell">細胞生物学<br>/ 解剖学Ⅰ</div></td>
+    <td colspan="2"><div class="cell c-early">早期医学実習Ⅱ</div></td>
+    <td class="empty"></td>
+  </tr>
+</table>
+</div>
+
+<!-- 後期① -->
+<div id="p2" style="display:none">
+<table>
+  <tr>
+    <th></th>
+    <th>Ⅰ 8:50〜10:20</th>
+    <th>Ⅱ 10:30〜12:00</th>
+    <th>Ⅲ 13:00〜14:30</th>
+    <th>Ⅳ 14:40〜16:10</th>
+    <th>Ⅴ 16:20〜17:50</th>
+  </tr>
+  <tr>
+    <td class="day">月</td>
+    <td colspan="2"><div class="cell c-physio2">生理学Ⅱ</div></td>
+    <td colspan="3"><div class="cell c-biochem">生化学</div></td>
+  </tr>
+  <tr>
+    <td class="day">火</td>
+    <td><div class="cell c-early">補講・試験等</div></td>
+    <td colspan="4"><div class="cell c-anatomy2">解剖学Ⅱ</div></td>
+  </tr>
+  <tr>
+    <td class="day">水</td>
+    <td><div class="cell c-biochem">生化学</div></td>
+    <td colspan="4"><div class="cell c-anatomy1">解剖学Ⅰ</div></td>
+  </tr>
+  <tr>
+    <td class="day">木</td>
+    <td><div class="cell c-research">医学と研究</div></td>
+    <td><div class="cell c-physio2">生理学Ⅱ</div></td>
+    <td colspan="3"><div class="cell c-early">早期医学実習Ⅱ</div></td>
+  </tr>
+  <tr>
+    <td class="day">金</td>
+    <td><div class="cell c-ethics">医療倫理学</div></td>
+    <td><div class="cell c-english">医療と法（全学共通）</div></td>
+    <td colspan="2"><div class="cell c-biochem">生化学</div></td>
+    <td class="empty"></td>
+  </tr>
+</table>
+</div>
+
+<!-- 後期② -->
+<div id="p3" style="display:none">
+<table>
+  <tr>
+    <th></th>
+    <th>Ⅰ 8:50〜10:20</th>
+    <th>Ⅱ 10:30〜12:00</th>
+    <th>Ⅲ 13:00〜14:30</th>
+    <th>Ⅳ 14:40〜16:10</th>
+    <th>Ⅴ 16:20〜17:50</th>
+  </tr>
+  <tr>
+    <td class="day">月</td>
+    <td colspan="2"><div class="cell c-physio2">生理学Ⅱ</div></td>
+    <td colspan="2"><div class="cell c-anatomy1">解剖学Ⅰ</div></td>
+    <td class="empty"></td>
+  </tr>
+  <tr>
+    <td class="day">火</td>
+    <td><div class="cell c-early">補講・試験等<br>/ 患者との出会い</div></td>
+    <td colspan="4"><div class="cell c-anatomy2">解剖学Ⅱ<br>/ 総合診療入門</div></td>
+  </tr>
+  <tr>
+    <td class="day">水</td>
+    <td><div class="cell c-biochem">生化学</div></td>
+    <td colspan="4"><div class="cell c-anatomy1">解剖学Ⅰ</div></td>
+  </tr>
+  <tr>
+    <td class="day">木</td>
+    <td><div class="cell c-research">医学と研究</div></td>
+    <td><div class="cell c-physio2">生理学Ⅱ / 補講</div></td>
+    <td colspan="3"><div class="cell c-early">早期医学実習Ⅱ</div></td>
+  </tr>
+  <tr>
+    <td class="day">金</td>
+    <td><div class="cell c-ethics">医療倫理学</div></td>
+    <td><div class="cell c-english">医療と法（全学共通）</div></td>
+    <td colspan="2"><div class="cell c-biochem">生化学<br>/ 医学・医療と社会</div></td>
+    <td class="empty"></td>
+  </tr>
+</table>
+</div>
+
+<script>
+function show(n) {
+  [0,1,2,3].forEach(i => {
+    document.getElementById('p'+i).style.display = i===n ? '' : 'none';
+    document.querySelectorAll('.tab')[i].classList.toggle('active', i===n);
+  });
+}
+</script>
+</body>
+</html>
