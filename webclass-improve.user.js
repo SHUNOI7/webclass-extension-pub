@@ -44,10 +44,64 @@
         new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
     }
 
-    // ── ダウンロードのインターセプト（fetch + Blob でファイル名付きDL）──
+    // ── ダウンロードユーティリティ ────────────────────────────────────
+    const wcDownload = async fileUrl => {
+        const raw  = localStorage.getItem('wc-current-chapter')
+                  || document.querySelector('h2.wcl_pageMainTitle, h2')?.textContent?.trim()
+                  || 'document';
+        const safe = raw.replace(/[/\\:*?"<>|]/g, '-').trim();
+        const ext  = fileUrl.split('?')[0].split('.').pop().toLowerCase() || 'pdf';
+        const resp = await fetch(fileUrl, { credentials: 'include' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = safe + '.' + ext;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    };
+
+    // ── モバイルレイアウト：loadit.php iframe からダウンロードボタンを注入 ──
+    // iOS Userscripts は iframe 内でスクリプトが動かないため、
+    // 親ページで iframe の src から PDF URL を取得してボタンを追加する
+    const injectLoaditButton = () => {
+        document.querySelectorAll('iframe[src*="loadit.php"]').forEach(iframe => {
+            if (iframe.dataset.wcDlInjected) return;
+            iframe.dataset.wcDlInjected = '1';
+
+            let fileUrl;
+            try {
+                const params = new URL(iframe.src, location.href).searchParams;
+                fileUrl = params.get('file'); // URL エンコードされたパス
+                if (fileUrl) fileUrl = decodeURIComponent(fileUrl); // 例: /webclass/data/course/14/.../file.pdf
+            } catch (_) { return; }
+            if (!fileUrl) return;
+
+            const btn = document.createElement('button');
+            btn.textContent = '⬇ ダウンロード';
+            btn.style.cssText = 'display:block;margin:6px 0;padding:6px 16px;background:#333;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;';
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                btn.textContent = '取得中…';
+                try {
+                    await wcDownload(fileUrl);
+                } catch (err) {
+                    alert('ダウンロード失敗: ' + err.message);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = '⬇ ダウンロード';
+                }
+            });
+            iframe.insertAdjacentElement('beforebegin', btn);
+        });
+    };
+
+    injectLoaditButton();
+    new MutationObserver(injectLoaditButton).observe(document.body, { childList: true, subtree: true });
+
+    // ── PC レイアウト：PDF.js の #download ボタンを拾う（同一フレーム内） ──
     // @grant none のため PDFViewerApplication に直接アクセス可能
     document.addEventListener('click', async e => {
-        // PDF.js の #download ボタン、または直接ファイルリンク（.pdf/.pptx 等）
         const pdfBtn    = e.target.closest('#download');
         const directLink = e.target.closest('a[href]');
 
@@ -65,28 +119,10 @@
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        // タイトル：localStorage → 現ページの h2 → fallback
-        const raw  = localStorage.getItem('wc-current-chapter')
-                  || document.querySelector('h2.wcl_pageMainTitle, h2')?.textContent?.trim()
-                  || 'document';
-        const safe = raw.replace(/[/\\:*?"<>|]/g, '-').trim();
-        const ext  = fileUrl.split('?')[0].split('.').pop().toLowerCase() || 'pdf';
-
         try {
-            const resp = await fetch(fileUrl, { credentials: 'include' });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const blob = await resp.blob();
-            const url  = URL.createObjectURL(blob);
-            const a    = document.createElement('a');
-            a.href = url;
-            a.download = safe + '.' + ext;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            await wcDownload(fileUrl);
         } catch (_) {
-            // フォールバック：元の動作に戻す
-            if (directLink) { directLink.click(); }
+            if (directLink) directLink.click();
         }
     }, true);
 
