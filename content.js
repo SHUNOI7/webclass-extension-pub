@@ -151,9 +151,9 @@
         const loadAnnounceState = () => { try { return JSON.parse(localStorage.getItem(ANNOUNCE_KEY)       || '{}'); } catch { return {}; } };
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
-        const UNREAD_CACHE_KEY  = 'wc-unread-materials-v2';
+        const COURSE_CACHE_PFX  = 'wc-unread-course-';
         const UNREAD_CACHE_TTL  = 30 * 60 * 1000; // 30分
-        const EXCLUDED_CATS     = new Set([]);
+        const EXCLUDED_CATS     = new Set(['自習', 'テスト', '小テスト']);
 
         const COURSES_2Y = [
             { id: '8d5215783015764ce951cc9024a8efa9', name: '分子生物学'       },
@@ -176,61 +176,52 @@
         let cachedResults      = null;
         let cachedAnnouncement = null;
 
-        // ── 未読資料フェッチ ──────────────────────────────────────────
-        const fetchUnreadMaterials = async () => {
-            try {
-                const cached = JSON.parse(localStorage.getItem(UNREAD_CACHE_KEY) || 'null');
-                if (cached && Date.now() - cached.ts < UNREAD_CACHE_TTL) return cached.data;
-            } catch (_) {}
-
-            const acsVal = document.querySelector('a[href*="acs_="]')?.href?.match(/acs_=([a-f0-9]+)/)?.[1] || '';
+        // ── 未読資料：コースページ訪問時にdocumentを直接パースしてキャッシュ ──
+        const parseAndCacheCourse = (doc, courseId, courseName) => {
             const now = new Date();
+            const items = [];
+            const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
+            doc.querySelectorAll('div.cl-contentsList_content').forEach(el => {
+                const category = el.querySelector('.cl-contentsList_categoryLabel')?.textContent?.trim() || '';
+                if (EXCLUDED_CATS.has(category)) return;
+                if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) return;
+                const periodText = el.querySelector('.cm-contentsList_contentDetailListItemData')?.textContent?.trim() || '';
+                const dates = periodText.match(/(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/g);
+                if (!dates || dates.length < 2) return;
+                const startDate = new Date(toISO(dates[0]));
+                const endDate   = new Date(toISO(dates[1]));
+                if (now < startDate || now > endDate) return;
+                const titleEl = el.querySelector('h4 a[href*="set_contents_id"]');
+                if (!titleEl) return;
+                items.push({
+                    title:      titleEl.textContent.trim(),
+                    href:       titleEl.getAttribute('href'),
+                    category,
+                    startDate:  startDate.toISOString(),
+                    courseName,
+                });
+            });
+            try { localStorage.setItem(COURSE_CACHE_PFX + courseId, JSON.stringify({ ts: Date.now(), items })); } catch (_) {}
+        };
 
-            const lists = await Promise.all(COURSES_2Y.map(async c => {
+        // 現在コースページにいる場合はすぐパース
+        const coursePathMatch = location.pathname.match(/\/course\.php\/([a-f0-9]+)\//);
+        if (coursePathMatch) {
+            const cid = coursePathMatch[1];
+            const course = COURSES_2Y.find(c => c.id === cid);
+            if (course) parseAndCacheCourse(document, cid, course.name);
+        }
+
+        // ダッシュボード表示用：全コースのキャッシュを集計
+        const getUnreadMaterials = () => {
+            const now = Date.now();
+            return COURSES_2Y.flatMap(c => {
                 try {
-                    const url = `/webclass/course.php/${c.id}/${acsVal ? '?acs_=' + acsVal : ''}`;
-                    const resp = await fetch(url, { credentials: 'include' });
-                    if (!resp.ok) { console.log('[WC unread] fetch failed', c.name, resp.status); return []; }
-                    const doc = new DOMParser().parseFromString(await resp.text(), 'text/html');
-                    const allEls = doc.querySelectorAll('div.cl-contentsList_content');
-                    console.log(`[WC unread] ${c.name}: ${allEls.length} items total`);
-                    const items = [];
-
-                    allEls.forEach(el => {
-                        const category = el.querySelector('.cl-contentsList_categoryLabel')?.textContent?.trim() || '';
-                        const titleEl = el.querySelector('h4 a[href*="set_contents_id"]');
-                        const titleText = titleEl?.textContent?.trim() || '(no title)';
-                        if (EXCLUDED_CATS.has(category)) { console.log(`[WC unread]   SKIP(cat=${category}) ${titleText}`); return; }
-
-                        const hasAccess = [...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent));
-                        if (hasAccess) { console.log(`[WC unread]   SKIP(accessed) ${titleText}`); return; }
-
-                        const periodText = el.querySelector('.cm-contentsList_contentDetailListItemData')?.textContent?.trim() || '';
-                        const dates = periodText.match(/(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/g);
-                        if (!dates || dates.length < 2) { console.log(`[WC unread]   SKIP(no period: "${periodText}") ${titleText}`); return; }
-                        const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
-                        const startDate = new Date(toISO(dates[0]));
-                        const endDate   = new Date(toISO(dates[1]));
-                        if (now < startDate || now > endDate) { console.log(`[WC unread]   SKIP(out of period) ${titleText}`); return; }
-
-                        if (!titleEl) { console.log(`[WC unread]   SKIP(no title link) ${titleText}`); return; }
-
-                        console.log(`[WC unread]   ADD(cat=${category}) ${titleText}`);
-                        items.push({
-                            title:      titleEl.textContent.trim(),
-                            href:       titleEl.getAttribute('href'),
-                            category,
-                            startDate:  startDate.toISOString(),
-                            courseName: c.name,
-                        });
-                    });
-                    return items;
-                } catch (e) { console.log('[WC unread] error', c.name, e); return []; }
-            }));
-
-            const data = lists.flat().sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-            try { localStorage.setItem(UNREAD_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
-            return data;
+                    const cached = JSON.parse(localStorage.getItem(COURSE_CACHE_PFX + c.id) || 'null');
+                    if (!cached || now - cached.ts > UNREAD_CACHE_TTL) return [];
+                    return cached.items;
+                } catch (_) { return []; }
+            }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
         };
 
         const renderUnreadMaterials = items => {
@@ -651,8 +642,7 @@
 
         refresh();
         renderAnnouncement();
-        // 未読資料はメイン表示後に非同期で追加（初期表示を遅らせない）
-        fetchUnreadMaterials().then(renderUnreadMaterials).catch(() => {});
+        renderUnreadMaterials(getUnreadMaterials());
     })();
 
     // ── グリッド表示 ────────────────────────────────────────────────
