@@ -242,7 +242,7 @@
 
         const UNREAD_CACHE_KEY  = 'wc-unread-materials-v2';
         const UNREAD_CACHE_TTL  = 30 * 60 * 1000;
-        const EXCLUDED_CATS     = new Set(['自習', 'テスト', '小テスト']);
+        const EXCLUDED_CATS     = new Set(['自習']);
 
         const COURSES_2Y = [
             { id: '8d5215783015764ce951cc9024a8efa9', name: '分子生物学'       },
