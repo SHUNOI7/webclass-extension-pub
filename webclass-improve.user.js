@@ -240,7 +240,7 @@
         const loadAnnounceState = () => { try { return JSON.parse(localStorage.getItem(ANNOUNCE_KEY)       || '{}'); } catch { return {}; } };
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
-        const UNREAD_CACHE_KEY  = 'wc-unread-materials';
+        const UNREAD_CACHE_KEY  = 'wc-unread-materials-v2';
         const UNREAD_CACHE_TTL  = 30 * 60 * 1000;
         const EXCLUDED_CATS     = new Set(['自習', 'テスト', '小テスト']);
 
@@ -291,8 +291,9 @@
                         const periodText = el.querySelector('.cm-contentsList_contentDetailListItemData')?.textContent?.trim() || '';
                         const dates = periodText.match(/(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/g);
                         if (!dates || dates.length < 2) return;
-                        const startDate = new Date(dates[0].replace(/\//g, '-'));
-                        const endDate   = new Date(dates[1].replace(/\//g, '-'));
+                        const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
+                        const startDate = new Date(toISO(dates[0]));
+                        const endDate   = new Date(toISO(dates[1]));
                         if (now < startDate || now > endDate) return;
 
                         const titleEl = el.querySelector('h4 a[href*="set_contents_id"]');
@@ -316,7 +317,7 @@
         };
 
         const renderUnreadMaterials = items => {
-            if (!items || items.length === 0) return;
+            if (!items) return;
             document.querySelectorAll('#View-0 .side-block-content.wc-assignment-sidebar').forEach(el => {
                 const section = document.createElement('div');
                 section.style.cssText = 'border-top:2px solid #e8e8e8;';
@@ -326,7 +327,7 @@
                 header.style.cssText = 'padding:4px 6px;font-size:11px;font-weight:bold;color:#555;background:#f5f5f5;display:flex;align-items:center;cursor:pointer;user-select:none;';
                 const headerLabel = document.createElement('span');
                 headerLabel.style.cssText = 'flex:1;';
-                headerLabel.textContent = `📌 未読の資料 (${items.length})`;
+                headerLabel.textContent = items.length > 0 ? `📌 未読の資料 (${items.length})` : '📌 未読の資料';
                 const arrow = document.createElement('span');
                 arrow.style.cssText = 'font-size:10px;color:#aaa;';
                 arrow.textContent = '▲';
@@ -343,6 +344,12 @@
 
                 const ul = document.createElement('ul');
                 ul.style.cssText = 'list-style:none;margin:0;padding:0;';
+                if (items.length === 0) {
+                    const li = document.createElement('li');
+                    li.style.cssText = 'padding:6px 8px;font-size:11px;color:#aaa;';
+                    li.textContent = 'すべて閲覧済みです';
+                    ul.appendChild(li);
+                }
                 items.forEach(item => {
                     const li = document.createElement('li');
                     li.style.cssText = 'padding:5px 6px;border-bottom:1px solid #f0f0f0;';
