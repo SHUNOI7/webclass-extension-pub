@@ -124,6 +124,10 @@
     })();
 
     // ── 未提出課題一覧をサイドバーに表示 ────────────────────────────
+    // iframe内では動かない（無限ループ防止）
+    if (window.self !== window.top) return;
+    if (location.pathname.includes('/login.php')) return;
+
     (async () => {
         const API = '/webclass/ip_mods.php/plugin/score_summary_table';
         const dashboardUrl = `${API}/dashboard`;
@@ -152,8 +156,10 @@
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
         const COURSE_CACHE_PFX  = 'wc-unread-course-';
-        const UNREAD_CACHE_TTL  = 30 * 60 * 1000; // 30分
-        const EXCLUDED_CATS     = new Set(['自習', 'テスト', '小テスト']);
+        const UNREAD_CACHE_TTL  = 5 * 60 * 1000; // 5分
+        const EXCLUDED_CATS     = new Set();
+        const MATERIAL_ACS      = document.querySelector('a[href*="acs_="]')?.href?.match(/acs_=([a-f0-9]+)/);
+        const materialAcs       = MATERIAL_ACS ? '?acs_=' + MATERIAL_ACS[1] : '';
 
         const COURSES_2Y = [
             { id: '8d5215783015764ce951cc9024a8efa9', name: '分子生物学'       },
@@ -175,6 +181,8 @@
 
         let cachedResults      = null;
         let cachedAnnouncement = null;
+        const loadedMaterialCourses = new Set();
+        const materialScan = { done: 0, total: 0, current: '', last: '', active: false };
 
         // ── 未読資料：コースページ訪問時にdocumentを直接パースしてキャッシュ ──
         const parseAndCacheCourse = (doc, courseId, courseName) => {
@@ -198,10 +206,12 @@
                     href:       titleEl.getAttribute('href'),
                     category,
                     startDate:  startDate.toISOString(),
+                    endDate:    endDate.toISOString(),
                     courseName,
                 });
             });
             try { localStorage.setItem(COURSE_CACHE_PFX + courseId, JSON.stringify({ ts: Date.now(), items })); } catch (_) {}
+            return items;
         };
 
         // 現在コースページにいる場合はすぐパース
@@ -213,29 +223,220 @@
         }
 
         // ダッシュボード表示用：全コースのキャッシュを集計
+        const coursePageHref = courseId => `/webclass/course.php/${courseId}/login${materialAcs}`;
+        const courseListHref = courseId => document
+            .querySelector(`.course-title a[href*="/webclass/course.php/${courseId}/login"]`)
+            ?.getAttribute('href') || '';
+        const courseFrameHref = courseId => courseListHref(courseId);
+        const isCourseListPage = () => COURSES_2Y.some(course => courseListHref(course.id));
+        if (!isCourseListPage()) return;
+
+        const displayCategory = category => ({
+            Question: '自習',
+            Material: '資料',
+            Forum: '掲示板',
+            Questionnaire: 'アンケート',
+        }[category] || category || '');
+
+        const getCachedUnreadMaterials = now => COURSES_2Y.flatMap(c => {
+            try {
+                const cached = JSON.parse(localStorage.getItem(COURSE_CACHE_PFX + c.id) || 'null');
+                if (!cached || now - cached.ts > UNREAD_CACHE_TTL) return [];
+                return cached.items.map(item => ({
+                    ...item,
+                    courseId: c.id,
+                    href: coursePageHref(c.id),
+                }));
+            } catch (_) { return []; }
+        });
+
+        const getApiUnreadMaterials = now => {
+            if (!cachedResults) return [];
+            return cachedResults.flatMap((courseItems, i) => {
+                if (!Array.isArray(courseItems)) return [];
+                const course = COURSES_2Y[i];
+                if (!course) return [];
+                if (loadedMaterialCourses.has(course.id)) return [];
+                return courseItems.filter(item => {
+                    if (!item.start_date || !item.end_date) return false;
+                    const startDate = new Date(item.start_date);
+                    const endDate = new Date(item.end_date);
+                    if (now < startDate.getTime() || now > endDate.getTime()) return false;
+                    if (item.hidden_content) return false;
+                    if (Array.isArray(item.scores) && item.scores.some(s => s.answer_datetime !== null)) return false;
+                    return true;
+                }).map(item => ({
+                    courseId: course.id,
+                    courseName: course.name,
+                    title: item.contents_name,
+                    href: coursePageHref(course.id),
+                    category: displayCategory(item.contents_kind),
+                    startDate: new Date(item.start_date).toISOString(),
+                }));
+            });
+        };
+
         const getUnreadMaterials = () => {
             const now = Date.now();
-            return COURSES_2Y.flatMap(c => {
-                try {
-                    const cached = JSON.parse(localStorage.getItem(COURSE_CACHE_PFX + c.id) || 'null');
-                    if (!cached || now - cached.ts > UNREAD_CACHE_TTL) return [];
-                    return cached.items;
-                } catch (_) { return []; }
-            }).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+            const seen = new Set();
+            return [...getApiUnreadMaterials(now), ...getCachedUnreadMaterials(now)]
+                .filter(item => {
+                    const key = `${item.courseId}:${item.title}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                })
+                .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
         };
+
+        const fetchCourseDocument = async course => {
+            const href = courseFrameHref(course.id);
+            if (!href) return { items: [], loaded: false };
+            const fetchWithTimeout = (url, options = {}, timeoutMs = 900) => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+                return fetch(url, { ...options, signal: controller.signal })
+                    .finally(() => clearTimeout(timeoutId));
+            };
+            try {
+                const response = await fetchWithTimeout(href, {
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+                if (new URL(response.url, location.origin).pathname.includes('/login.php')) {
+                    return { items: [], loaded: false };
+                }
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                if (!doc.querySelector(`a[href*="/webclass/course.php/${course.id}/logout"], a.course-name[href*="/webclass/course.php/${course.id}/"]`)) {
+                    return { items: [], loaded: false };
+                }
+                const items = parseAndCacheCourse(doc, course.id, course.name);
+                const exitHref = doc.querySelector(`a[href*="/webclass/course.php/${course.id}/logout"]`)?.getAttribute('href');
+                if (exitHref) {
+                    await fetchWithTimeout(new URL(exitHref, location.origin).href, {
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                    }, 700).catch(() => null);
+                }
+                return { items, loaded: true };
+            } catch (_) {
+                return { items: [], loaded: false };
+            }
+        };
+
+        const loadCourseInFrame = (course, timeoutMs = 1000) => new Promise(resolve => {
+            const iframe = document.createElement('iframe');
+            let done = false;
+            let parsedItems = null;
+            let phase = 'course';
+            let intervalId = null;
+            let timeoutId = null;
+            const isCourseDocument = doc => !!doc.querySelector(
+                `a[href*="/webclass/course.php/${course.id}/logout"], a.course-name[href*="/webclass/course.php/${course.id}/"]`
+            );
+            const finish = (items, loaded = false) => {
+                if (done) return;
+                done = true;
+                if (intervalId) clearInterval(intervalId);
+                if (timeoutId) clearTimeout(timeoutId);
+                iframe.onload = null;
+                iframe.remove();
+                resolve({ items: items || [], loaded });
+            };
+            iframe.style.cssText = 'position:fixed;width:1px;height:1px;left:-9999px;top:-9999px;border:0;opacity:0;pointer-events:none;';
+            const checkFrame = () => {
+                try {
+                    const path = iframe.contentWindow.location.pathname;
+                    if (path.includes('/login.php')) return finish([]);
+                    const doc = iframe.contentDocument;
+                    if (!doc) return;
+                    if (phase === 'exit') return finish(parsedItems, true);
+                    if (doc.querySelector('div.cl-contentsList_content') || (doc.readyState === 'complete' && isCourseDocument(doc))) {
+                        parsedItems = parseAndCacheCourse(doc, course.id, course.name);
+                        const exitHref = doc.querySelector(`a[href*="/webclass/course.php/${course.id}/logout"]`)?.getAttribute('href');
+                        if (exitHref) {
+                            phase = 'exit';
+                            iframe.src = new URL(exitHref, location.origin).href;
+                            setTimeout(() => finish(parsedItems, true), 250);
+                            return;
+                        }
+                        finish(parsedItems, true);
+                        return;
+                    }
+                } catch (_) {
+                    finish([]);
+                }
+            };
+            iframe.onload = checkFrame;
+            document.body.appendChild(iframe);
+            const href = courseFrameHref(course.id);
+            if (!href) return finish([]);
+            intervalId = setInterval(checkFrame, 50);
+            timeoutId = setTimeout(() => finish([]), timeoutMs);
+            iframe.src = href;
+        });
+
+        const loadCourse = async (course, timeoutMs = 1000) => {
+            const fetched = await fetchCourseDocument(course);
+            if (fetched.loaded) return fetched;
+            return loadCourseInFrame(course, timeoutMs);
+        };
+
+        const fetchMissingCourseMaterials = async () => {
+            if (!cachedResults) return;
+            const targets = COURSES_2Y.map((course, index) => ({ course, index }));
+            materialScan.total = targets.length;
+            materialScan.done = 0;
+            materialScan.current = '';
+            materialScan.last = '';
+            materialScan.active = true;
+            renderUnreadMaterials(getUnreadMaterials());
+            const retryTargets = [];
+            for (const { course, index } of targets) {
+                materialScan.current = course.name;
+                materialScan.last = '';
+                renderUnreadMaterials(getUnreadMaterials());
+                const { items, loaded } = await loadCourse(course);
+                if (loaded) loadedMaterialCourses.add(course.id);
+                materialScan.done += 1;
+                materialScan.last = loaded ? `${course.name}: ${items.length}件` : `${course.name}: 未確認`;
+                renderUnreadMaterials(getUnreadMaterials());
+                if (!loaded) retryTargets.push({ course, index });
+            }
+            materialScan.total += retryTargets.length;
+            for (const { course, index } of retryTargets) {
+                materialScan.current = `再確認: ${course.name}`;
+                materialScan.last = '';
+                renderUnreadMaterials(getUnreadMaterials());
+                const { items, loaded } = await loadCourse(course, 3000);
+                if (loaded) loadedMaterialCourses.add(course.id);
+                materialScan.done += 1;
+                materialScan.last = loaded ? `再確認 ${course.name}: ${items.length}件` : `再確認 ${course.name}: 未確認`;
+                renderUnreadMaterials(getUnreadMaterials());
+            }
+            materialScan.current = '';
+            materialScan.active = false;
+            renderUnreadMaterials(getUnreadMaterials());
+        };
+
 
         const renderUnreadMaterials = items => {
             if (!items) return;
-            document.querySelectorAll('#View-0 .side-block-content.wc-assignment-sidebar').forEach(el => {
+            document.querySelectorAll('.wc-unread-material-section').forEach(section => section.remove());
+            document.querySelectorAll('#View-0').forEach(block => {
                 const section = document.createElement('div');
-                section.style.cssText = 'border-top:2px solid #e8e8e8;';
+                section.className = `${block.className} wc-unread-material-section`;
+                const sideBlock = document.createElement('div');
+                sideBlock.className = 'side-block';
 
                 let collapsed = false;
-                const header = document.createElement('div');
-                header.style.cssText = 'padding:4px 6px;font-size:11px;font-weight:bold;color:#555;background:#f5f5f5;display:flex;align-items:center;cursor:pointer;user-select:none;';
+                const header = document.createElement('h4');
+                header.className = 'side-block-title';
+                header.style.cssText = 'display:flex;align-items:center;cursor:pointer;user-select:none;';
                 const headerLabel = document.createElement('span');
                 headerLabel.style.cssText = 'flex:1;';
-                headerLabel.textContent = items.length > 0 ? `📌 未読の資料 (${items.length})` : '📌 未読の資料';
+                headerLabel.textContent = items.length > 0 ? `未読の資料 (${items.length})` : '未読の資料';
                 const arrow = document.createElement('span');
                 arrow.style.cssText = 'font-size:10px;color:#aaa;';
                 arrow.textContent = '▲';
@@ -243,7 +444,8 @@
                 header.appendChild(arrow);
 
                 const listEl = document.createElement('div');
-                listEl.className = 'wc-assignment-list';
+                listEl.className = 'side-block-content wc-unread-material-content';
+                listEl.style.cssText = 'padding:0;';
                 header.addEventListener('click', () => {
                     collapsed = !collapsed;
                     listEl.style.display = collapsed ? 'none' : '';
@@ -252,6 +454,15 @@
 
                 const ul = document.createElement('ul');
                 ul.style.cssText = 'list-style:none;margin:0;padding:0;';
+                if (materialScan.active || materialScan.done > 0) {
+                    const li = document.createElement('li');
+                    li.style.cssText = 'padding:6px 8px;font-size:11px;color:#777;background:#fafafa;border-bottom:1px solid #eee;';
+                    const status = materialScan.active ? '確認中' : '確認完了';
+                    const current = materialScan.current ? ` / 現在: ${materialScan.current}` : '';
+                    const last = materialScan.last ? ` / 前回: ${materialScan.last}` : '';
+                    li.textContent = `${status}: ${materialScan.done}/${materialScan.total}${current}${last}`;
+                    ul.appendChild(li);
+                }
                 if (items.length === 0) {
                     const li = document.createElement('li');
                     li.style.cssText = 'padding:6px 8px;font-size:11px;color:#aaa;';
@@ -282,8 +493,8 @@
                         cat.style.cssText = 'background:#eee;padding:0 3px;border-radius:2px;';
                         metaDiv.appendChild(cat);
                     }
-                    const d = new Date(item.startDate);
                     const dateEl = document.createElement('span');
+                    const d = new Date(item.startDate);
                     dateEl.textContent = `公開 ${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
                     metaDiv.appendChild(dateEl);
 
@@ -294,9 +505,10 @@
                 });
 
                 listEl.appendChild(ul);
-                section.appendChild(header);
-                section.appendChild(listEl);
-                el.appendChild(section);
+                sideBlock.appendChild(header);
+                sideBlock.appendChild(listEl);
+                section.appendChild(sideBlock);
+                block.after(section);
             });
         };
 
@@ -400,10 +612,20 @@
         const refresh = () => {
             const now = new Date();
             renderSidebar(buildPending(loadOverrides(), loadRules(), now), now);
+            renderUnreadMaterials(getUnreadMaterials());
+        };
+
+        const getAssignmentSidebarContents = () => {
+            const isAssignmentTarget = el =>
+                !el.classList.contains('wc-unread-material-content') &&
+                !el.closest('.wc-unread-material-section');
+            const initialized = Array.from(document.querySelectorAll('#View-0 .wc-assignment-sidebar')).filter(isAssignmentTarget);
+            if (initialized.length > 0) return initialized;
+            return Array.from(document.querySelectorAll('#View-0 .side-block-content')).filter(isAssignmentTarget);
         };
 
         const renderSidebar = (pending, now) => {
-            document.querySelectorAll('#View-0 .side-block-content').forEach(el => {
+            getAssignmentSidebarContents().forEach(el => {
                 el.classList.add('wc-assignment-sidebar');
                 el.innerHTML = '';
 
@@ -491,7 +713,8 @@
                     applyBtn.addEventListener('click', () => {
                         settingsPanel.style.display = 'none';
                         settingsBtn.style.opacity = '0.4';
-                        refresh();
+                        const now = new Date();
+                        renderSidebar(buildPending(loadOverrides(), loadRules(), now), now);
                     });
                     applyRow.appendChild(applyBtn);
                     settingsPanel.appendChild(applyRow);
@@ -628,7 +851,7 @@
             });
         };
 
-        document.querySelectorAll('#View-0 .side-block-content').forEach(el => {
+        getAssignmentSidebarContents().forEach(el => {
             el.classList.add('wc-assignment-sidebar');
             el.innerHTML = '<p style="padding:0.3em;font-size:12px;color:#aaa;">読込中...</p>';
         });
@@ -643,6 +866,9 @@
         refresh();
         renderAnnouncement();
         renderUnreadMaterials(getUnreadMaterials());
+        await fetchMissingCourseMaterials();
+        renderUnreadMaterials(getUnreadMaterials());
+
     })();
 
     // ── グリッド表示 ────────────────────────────────────────────────
