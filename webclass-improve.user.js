@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      3.4
+// @version      3.5
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
-// @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension/main/webclass-improve.user.js
-// @downloadURL  https://raw.githubusercontent.com/SHUNOI7/webclass-extension/main/webclass-improve.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/SHUNOI7/webclass-extension@main/webclass-improve.user.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/SHUNOI7/webclass-extension@main/webclass-improve.user.js
 // @connect      gist.githubusercontent.com
 // @grant        none
 // @run-at       document-idle
