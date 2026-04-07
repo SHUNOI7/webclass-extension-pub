@@ -3,7 +3,7 @@
 Tampermonkeyには何かを手入力するのではなく、下のURLをChromeで開いてください。
 
 ```text
-https://cdn.jsdelivr.net/gh/SHUNOI7/webclass-extension@main/webclass-improve.user.js
+https://cdn.jsdelivr.net/gh/SHUNOI7/webclass-extension-pub@main/webclass-improve.user.js
 ```
 
 Tampermonkeyのインストール画面が開いたら、「インストール」または「再インストール」を押します。
