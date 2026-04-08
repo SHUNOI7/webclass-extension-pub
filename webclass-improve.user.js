@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      3.8
+// @version      3.9
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://cdn.jsdelivr.net/gh/SHUNOI7/webclass-extension-pub@main/webclass-improve.user.js
@@ -572,6 +572,8 @@
                     li.textContent = 'すべて閲覧済みです';
                     ul.appendChild(li);
                 }
+                const itemsUl = document.createElement('ul');
+                itemsUl.style.cssText = 'list-style:none;margin:0;padding:0;max-height:280px;overflow-y:auto;';
                 items.forEach(item => {
                     const li = document.createElement('li');
                     li.style.cssText = 'padding:5px 6px;border-bottom:1px solid #f0f0f0;';
@@ -604,10 +606,11 @@
                     li.appendChild(courseDiv);
                     li.appendChild(titleDiv);
                     li.appendChild(metaDiv);
-                    ul.appendChild(li);
+                    itemsUl.appendChild(li);
                 });
 
                 listEl.appendChild(ul);
+                if (items.length > 0) listEl.appendChild(itemsUl);
                 sideBlock.appendChild(header);
                 sideBlock.appendChild(listEl);
                 section.appendChild(sideBlock);
