@@ -58,6 +58,8 @@
         let autoFilled          = false;
         let lastEnteredPassword = null;
 
+        const getAutoPassword = () => (contentsId && loadPdfOverrides()[contentsId]) || (courseId && loadPdfPasswords()[courseId]) || '';
+
         const showSavePrompt = password => {
             if (!contentsId) return;
             const banner = document.createElement('div');
@@ -86,6 +88,42 @@
 
         const isVisible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
 
+        const isPdfLoaded = () => {
+            try {
+                if (window.PDFViewerApplication?.pdfDocument) return true;
+            } catch (_) {}
+            return !!document.querySelector('#viewer .page[data-loaded="true"], #viewer .page canvas, .pdfViewer .page canvas');
+        };
+
+        const revealPasswordDialog = () => {
+            const input     = document.getElementById('password');
+            const submitBtn = document.getElementById('passwordSubmit');
+            if (!input || !submitBtn) return false;
+
+            [
+                document.getElementById('passwordOverlay'),
+                document.getElementById('overlayContainer'),
+                input.closest('dialog'),
+                input.closest('[role="dialog"]'),
+                input.closest('.dialog'),
+            ].filter(Boolean).forEach(el => {
+                el.hidden = false;
+                el.classList.remove('hidden');
+                if (el.style.display === 'none') el.style.display = '';
+                if (el.style.visibility === 'hidden') el.style.visibility = '';
+                if (el instanceof HTMLDialogElement && !el.open) {
+                    try { el.showModal(); } catch (_) { el.setAttribute('open', ''); }
+                }
+            });
+
+            input.disabled = false;
+            submitBtn.disabled = false;
+            input.value = '';
+            input.placeholder = 'PDFのパスワードを入力';
+            setTimeout(() => input.focus(), 0);
+            return isVisible(input);
+        };
+
         const checkPasswordDialog = () => {
             const input     = document.getElementById('password');
             const submitBtn = document.getElementById('passwordSubmit');
@@ -107,18 +145,24 @@
                         cancelled = false;
                         lastEnteredPassword = null;
                     }
-                }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+                }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open'] });
             }
 
             if (!autoFilled) {
                 autoFilled = true;
-                const autoPassword = (contentsId && loadPdfOverrides()[contentsId]) || (courseId && loadPdfPasswords()[courseId]);
-                if (autoPassword) { input.value = autoPassword; submitBtn.click(); }
+                const autoPassword = getAutoPassword();
+                if (autoPassword) {
+                    input.value = autoPassword;
+                    submitBtn.click();
+                    setTimeout(() => {
+                        if (!isPdfLoaded() && !isVisible(input)) revealPasswordDialog();
+                    }, 1200);
+                }
             }
         };
 
         new MutationObserver(checkPasswordDialog).observe(document.body, {
-            childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'],
+            childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open'],
         });
         checkPasswordDialog();
     })();
@@ -793,14 +837,12 @@
                             futureBadge.textContent = '未公開';
                             futureBadge.style.cssText = 'font-size:9px;background:#d7ecff;color:#245c88;border-radius:2px;padding:0 3px;cursor:default;';
                             deadlineDiv.appendChild(futureBadge);
-
-                            const openTxt = document.createElement('span');
-                            openTxt.textContent = `公開 ${fmt(item.startDate)}`;
-                            deadlineDiv.appendChild(openTxt);
                         }
 
                         const txt = document.createElement('span');
-                        txt.textContent = `〆 ${fmt(item.deadline)}`;
+                        txt.textContent = item.isFuture
+                            ? `${fmt(item.startDate)} - ${fmt(item.deadline)}`
+                            : `〆 ${fmt(item.deadline)}`;
                         deadlineDiv.appendChild(txt);
 
                         if (item.isOverridden) {
@@ -909,22 +951,22 @@
     const acs = acsMatch ? '?acs_=' + acsMatch[1] : '';
 
     const C = {
-        anatomy2: { id: '6b114e2b135f7aac169bc428f00951aa', name: '解剖学Ⅱ',        cls: 'c-anatomy2' },
-        anatomy1: { id: 'aea2184cf7cd67f5ea205f70e8a9a8ab', name: '解剖学Ⅰ',        cls: 'c-anatomy1' },
-        biochem:  { id: '49f9ee1ac60effa5895a47682fb6198e', name: '生化学',          cls: 'c-biochem'  },
-        physio1:  { id: '6d5e784a3c6676d64fae08ec8417ae70', name: '生理学Ⅰ',        cls: 'c-physio1'  },
-        physio2:  { id: '235d2308e5452e1b8e1cbcd801b9d6e2', name: '生理学Ⅱ',        cls: 'c-physio2'  },
-        molbio:   { id: '8d5215783015764ce951cc9024a8efa9', name: '分子生物学',       cls: 'c-molbio'   },
-        molgen:   { id: 'fdc0989de1e818adafa59ccf8f40c39a', name: '分子遺伝学',       cls: 'c-molgen'   },
-        cell:     { id: '06b305e2e2aefec207ec25f0bf93018e', name: '細胞生物学',       cls: 'c-cell'     },
-        chemii:   { id: '14f26982e6d4628008ca1272a3a3cfcd', name: '医用化学Ⅱ',       cls: 'c-chemii'   },
-        behavior: { id: '28e51271a617bb1de7d40b2472c43118', name: '行動科学',         cls: 'c-behavior' },
-        early:    { id: '19e2e404088da5a87f17b10be54392ce', name: '早期医学実習Ⅱ',   cls: 'c-early'    },
-        ethics:   { id: '1af3888f3b4f25f3c99c6d09ca8bdbf7', name: '医療倫理学',       cls: 'c-ethics'   },
-        research: { id: '3c58a2eebd8d277e8a23660cba8607f2', name: '医学と研究',       cls: 'c-research' },
-        patient:  { id: '9b3e1287ccdd818baae60be6ec73c9c1', name: '患者との出会い',   cls: 'c-patient'  },
-        society:  { id: '38a9d09f451ee1cb82f6c6770d88ca9d', name: '医学・医療と社会', cls: 'c-society'  },
-        english:  { id: null,                               name: '英語（全学共通）', cls: 'c-english'  },
+        anatomy2: { id: '6b114e2b135f7aac169bc428f00951aa', name: 'Anatomy II',                     cls: 'c-anatomy2' },
+        anatomy1: { id: 'aea2184cf7cd67f5ea205f70e8a9a8ab', name: 'Anatomy I',                      cls: 'c-anatomy1' },
+        biochem:  { id: '49f9ee1ac60effa5895a47682fb6198e', name: 'Biochemistry',                   cls: 'c-biochem'  },
+        physio1:  { id: '6d5e784a3c6676d64fae08ec8417ae70', name: 'Physiology I',                   cls: 'c-physio1'  },
+        physio2:  { id: '235d2308e5452e1b8e1cbcd801b9d6e2', name: 'Physiology II',                  cls: 'c-physio2'  },
+        molbio:   { id: '8d5215783015764ce951cc9024a8efa9', name: 'Molecular Biology',              cls: 'c-molbio'   },
+        molgen:   { id: 'fdc0989de1e818adafa59ccf8f40c39a', name: 'Molecular Genetics',             cls: 'c-molgen'   },
+        cell:     { id: '06b305e2e2aefec207ec25f0bf93018e', name: 'Cell Biology',                   cls: 'c-cell'     },
+        chemii:   { id: '14f26982e6d4628008ca1272a3a3cfcd', name: 'Medical Chemistry II',           cls: 'c-chemii'   },
+        behavior: { id: '28e51271a617bb1de7d40b2472c43118', name: 'Behavioral Science',             cls: 'c-behavior' },
+        early:    { id: '19e2e404088da5a87f17b10be54392ce', name: 'Early Medical Practice II',      cls: 'c-early'    },
+        ethics:   { id: '1af3888f3b4f25f3c99c6d09ca8bdbf7', name: 'Medical Ethics',                 cls: 'c-ethics'   },
+        research: { id: '3c58a2eebd8d277e8a23660cba8607f2', name: 'Medicine and Research',          cls: 'c-research' },
+        patient:  { id: '9b3e1287ccdd818baae60be6ec73c9c1', name: 'Encounter with Patients',        cls: 'c-patient'  },
+        society:  { id: '38a9d09f451ee1cb82f6c6770d88ca9d', name: 'Medicine, Healthcare and Society', cls: 'c-society'  },
+        english:  { id: null,                               name: 'English (General Education)',   cls: 'c-english'  },
     };
 
     const s = (key, span = 1, note = '') => ({ key, span, note });
@@ -939,8 +981,8 @@
         {
             label: '前期① 4/1〜5/29',
             days: [
-                [s('molgen'), s('chemii'), s(isAfterApr27 ? 'physio1' : 'anatomy2', 3, '骨学〜4/20 / 生理学Ⅰ 4/27〜')],
-                [s('molgen'), s('chemii'), s('anatomy2', 3, '骨学・組織学')],
+                [s('molgen'), s('chemii'), s(isAfterApr27 ? 'physio1' : 'anatomy2', 3, 'Osteology until 4/20 / Physiology I from 4/27')],
+                [s('molgen'), s('chemii'), s('anatomy2', 3, 'Osteology / Histology')],
                 [s('molbio'), s('molbio'), s('behavior', 2), e()],
                 [s('cell'), s('physio1'), s('anatomy2', 3)],
                 [s('english'), s('cell'), s('early', 2), e()],
@@ -949,18 +991,18 @@
         {
             label: '前期② 6/1〜7/24',
             days: [
-                [s('biochem', 2), s('physio1', 2, '〜6/29'), e()],
-                [s('molgen', 1, '補講'), s('anatomy1', 4)],
+                [s('biochem', 2), s('physio1', 2, 'until 6/29'), e()],
+                [s('molgen', 1, 'Makeup'), s('anatomy1', 4)],
                 [s('molbio'), s('molbio'), s('behavior', 2), e()],
-                [s('molgen', 1, '補講'), s('anatomy2', 4, '組織学')],
-                [s('english'), s('cell', 1, '/ 解剖学Ⅰ'), s('early', 2), e()],
+                [s('molgen', 1, 'Makeup'), s('anatomy2', 4, 'Histology')],
+                [s('english'), s('cell', 1, '/ Anatomy I'), s('early', 2), e()],
             ],
         },
         {
             label: '後期① 9/30〜11/20',
             days: [
                 [s('physio2', 2), s('biochem', 3)],
-                [s('early', 1, '補講・試験'), s('anatomy2', 4)],
+                [s('early', 1, 'Makeup / Exam'), s('anatomy2', 4)],
                 [s('biochem'), s('anatomy1', 4)],
                 [s('research'), s('physio2'), s('early', 3)],
                 [s('ethics'), s('english'), s('biochem', 2), e()],
@@ -970,10 +1012,10 @@
             label: '後期② 11/24〜2/5',
             days: [
                 [s('physio2', 2), s('anatomy1', 2), e()],
-                [s('early', 1, '補講 / 患者との出会い'), s('anatomy2', 4, '/ 総合診療入門')],
+                [s('early', 1, 'Makeup / Encounter with Patients'), s('anatomy2', 4, '/ Introduction to General Medicine')],
                 [s('biochem'), s('anatomy1', 4)],
-                [s('research'), s('physio2', 1, '/ 補講'), s('early', 3)],
-                [s('ethics'), s('english'), s('biochem', 2, '/ 医学・医療と社会'), e()],
+                [s('research'), s('physio2', 1, '/ Makeup'), s('early', 3)],
+                [s('ethics'), s('english'), s('biochem', 2, '/ Medicine, Healthcare and Society'), e()],
             ],
         },
     ];
