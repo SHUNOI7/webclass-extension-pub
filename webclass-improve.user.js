@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      3.6
+// @version      3.7
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://cdn.jsdelivr.net/gh/SHUNOI7/webclass-extension-pub@main/webclass-improve.user.js
@@ -475,7 +475,7 @@
         };
 
         const fetchMissingCourseMaterials = async () => {
-            if (!cachedResults) return;
+            if (!cachedResults || materialScan.active) return;
             const targets = COURSES_2Y.map((course, index) => ({ course, index }));
             materialScan.total = targets.length;
             materialScan.done = 0;
@@ -544,6 +544,19 @@
 
                 const ul = document.createElement('ul');
                 ul.style.cssText = 'list-style:none;margin:0;padding:0;';
+                const actionLi = document.createElement('li');
+                actionLi.style.cssText = 'padding:6px 8px;border-bottom:1px solid #eee;background:#fafafa;';
+                const scanBtn = document.createElement('button');
+                scanBtn.type = 'button';
+                scanBtn.textContent = materialScan.active ? '確認中...' : '全授業を確認';
+                scanBtn.disabled = materialScan.active;
+                scanBtn.style.cssText = 'font-size:11px;padding:3px 8px;border:1px solid #999;border-radius:3px;background:#fff;color:#333;cursor:pointer;';
+                scanBtn.addEventListener('click', () => {
+                    if (materialScan.active) return;
+                    fetchMissingCourseMaterials();
+                });
+                actionLi.appendChild(scanBtn);
+                ul.appendChild(actionLi);
                 if (materialScan.active || materialScan.done > 0) {
                     const li = document.createElement('li');
                     li.style.cssText = 'padding:6px 8px;font-size:11px;color:#777;background:#fafafa;border-bottom:1px solid #eee;';
@@ -955,8 +968,6 @@
 
         refresh();
         renderAnnouncement();
-        renderUnreadMaterials(getUnreadMaterials());
-        await fetchMissingCourseMaterials();
         renderUnreadMaterials(getUnreadMaterials());
     })();
 
