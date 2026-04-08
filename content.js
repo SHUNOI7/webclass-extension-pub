@@ -719,7 +719,7 @@
 
                     const hint = document.createElement('div');
                     hint.style.cssText = 'font-size:10px;color:#999;padding:4px 6px 2px;';
-                    hint.textContent = '講義ルール: 授業日から何日以内（空欄 = end_date を使用）／ 🔑 PDFパスワード';
+                    hint.textContent = '講義ルール: 課題公開日から何日以内（空欄：利用可能期限を表示）／ 🔑 PDFパスワード';
                     settingsPanel.appendChild(hint);
 
                     COURSES_2Y.forEach(c => {
