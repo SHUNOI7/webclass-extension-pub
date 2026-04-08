@@ -595,10 +595,10 @@
                         deadline = systemDeadline;
                     }
 
-                    if (deadline < now) return;
                     const submitted = item.scores && item.scores.some(s => s.answer_datetime !== null);
                     if (submitted) return;
                     const isFuture = !!(startDate && now < startDate);
+                    const isExpired = deadline < now;
                     items.push({
                         courseId: COURSES_2Y[i].id,
                         courseName: COURSES_2Y[i].name,
@@ -610,10 +610,14 @@
                         isOverridden,
                         isRuled,
                         isFuture,
+                        isExpired,
                     });
                 });
             });
-            return items.sort((a, b) => a.deadline - b.deadline);
+            return items.sort((a, b) => {
+                if (a.isExpired !== b.isExpired) return a.isExpired ? -1 : 1;
+                return a.deadline - b.deadline;
+            });
         };
 
         const renderAnnouncement = () => {
@@ -820,19 +824,25 @@
 
                     const renderDeadlineRow = () => {
                         const diff = item.deadline - now;
+                        const expired = item.isExpired;
                         const urgent = diff < 86400000;
                         const soon   = diff < 7 * 86400000;
-                        const col    = item.isFuture ? '#356b9a' : urgent ? '#c00' : soon ? '#d97000' : '#888';
-                        const nameCol = item.isFuture ? '#244f75' : urgent ? '#c00' : soon ? '#d97000' : '#333';
-                        li.style.background = item.isFuture ? '#eef6ff' : '';
-                        li.style.borderBottomColor = item.isFuture ? '#d7ecff' : '#f0f0f0';
-                        courseDiv.style.color = item.isFuture ? '#356b9a' : urgent ? '#c00' : soon ? '#d97000' : '#999';
+                        const col    = expired ? '#a00000' : item.isFuture ? '#356b9a' : urgent ? '#c00' : soon ? '#d97000' : '#888';
+                        const nameCol = expired ? '#8b0000' : item.isFuture ? '#244f75' : urgent ? '#c00' : soon ? '#d97000' : '#333';
+                        li.style.background = expired ? '#fff1f1' : item.isFuture ? '#eef6ff' : '';
+                        li.style.borderBottomColor = expired ? '#ffd0d0' : item.isFuture ? '#d7ecff' : '#f0f0f0';
+                        courseDiv.style.color = expired ? '#a00000' : item.isFuture ? '#356b9a' : urgent ? '#c00' : soon ? '#d97000' : '#999';
                         courseDiv.textContent = courseName;
                         nameDiv.querySelector('a').style.color = nameCol;
                         deadlineDiv.style.color = col;
                         deadlineDiv.innerHTML = '';
 
-                        if (item.isFuture) {
+                        if (expired) {
+                            const expiredBadge = document.createElement('span');
+                            expiredBadge.textContent = '期限切れ';
+                            expiredBadge.style.cssText = 'font-size:9px;background:#a00000;color:#fff;border-radius:2px;padding:0 3px;cursor:default;';
+                            deadlineDiv.appendChild(expiredBadge);
+                        } else if (item.isFuture) {
                             const futureBadge = document.createElement('span');
                             futureBadge.textContent = '未公開';
                             futureBadge.style.cssText = 'font-size:9px;background:#d7ecff;color:#245c88;border-radius:2px;padding:0 3px;cursor:default;';
