@@ -551,15 +551,18 @@
                     if (deadline < now) return;
                     const submitted = item.scores && item.scores.some(s => s.answer_datetime !== null);
                     if (submitted) return;
+                    const isFuture = !!(startDate && now < startDate);
                     items.push({
                         courseId: COURSES_2Y[i].id,
                         courseName: COURSES_2Y[i].name,
                         name: item.contents_name,
                         deadline,
+                        startDate,
                         systemDeadline,
                         itemKey,
                         isOverridden,
                         isRuled,
+                        isFuture,
                     });
                 });
             });
@@ -772,13 +775,26 @@
                         const diff = item.deadline - now;
                         const urgent = diff < 86400000;
                         const soon   = diff < 7 * 86400000;
-                        const col    = urgent ? '#c00' : soon ? '#d97000' : '#888';
-                        const nameCol = urgent ? '#c00' : soon ? '#d97000' : '#333';
-                        courseDiv.style.color = urgent ? '#c00' : soon ? '#d97000' : '#999';
+                        const col    = item.isFuture ? '#356b9a' : urgent ? '#c00' : soon ? '#d97000' : '#888';
+                        const nameCol = item.isFuture ? '#244f75' : urgent ? '#c00' : soon ? '#d97000' : '#333';
+                        li.style.background = item.isFuture ? '#eef6ff' : '';
+                        li.style.borderBottomColor = item.isFuture ? '#d7ecff' : '#f0f0f0';
+                        courseDiv.style.color = item.isFuture ? '#356b9a' : urgent ? '#c00' : soon ? '#d97000' : '#999';
                         courseDiv.textContent = courseName;
                         nameDiv.querySelector('a').style.color = nameCol;
                         deadlineDiv.style.color = col;
                         deadlineDiv.innerHTML = '';
+
+                        if (item.isFuture) {
+                            const futureBadge = document.createElement('span');
+                            futureBadge.textContent = '未公開';
+                            futureBadge.style.cssText = 'font-size:9px;background:#d7ecff;color:#245c88;border-radius:2px;padding:0 3px;cursor:default;';
+                            deadlineDiv.appendChild(futureBadge);
+
+                            const openTxt = document.createElement('span');
+                            openTxt.textContent = `公開 ${fmt(item.startDate)}`;
+                            deadlineDiv.appendChild(openTxt);
+                        }
 
                         const txt = document.createElement('span');
                         txt.textContent = `〆 ${fmt(item.deadline)}`;
