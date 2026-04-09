@@ -324,24 +324,33 @@
             const now = new Date();
             const items = [];
             const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
+            const extractDateRange = el => {
+                const detailItems = [...el.querySelectorAll('.cm-contentsList_contentDetailListItem, .cl-contentsList_contentDetailListItem')];
+                const periodRow = detailItems.find(row => /利用可能期間/.test(row.textContent || ''));
+                const sourceText = periodRow?.textContent || el.textContent || '';
+                const dates = sourceText.match(/(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/g);
+                if (!dates || dates.length < 2) return null;
+                return {
+                    startDate: new Date(toISO(dates[0])),
+                    endDate: new Date(toISO(dates[1])),
+                };
+            };
             doc.querySelectorAll('div.cl-contentsList_content').forEach(el => {
                 const category = el.querySelector('.cl-contentsList_categoryLabel')?.textContent?.trim() || '';
                 if (EXCLUDED_CATS.has(category)) return;
                 if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) return;
-                const periodText = el.querySelector('.cm-contentsList_contentDetailListItemData')?.textContent?.trim() || '';
-                const dates = periodText.match(/(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2})/g);
-                if (!dates || dates.length < 2) return;
-                const startDate = new Date(toISO(dates[0]));
-                const endDate   = new Date(toISO(dates[1]));
-                if (now < startDate || now > endDate) return;
-                const titleEl = el.querySelector('h4 a[href*="set_contents_id"]');
+                const range = extractDateRange(el);
+                const startDate = range?.startDate || null;
+                const endDate = range?.endDate || null;
+                if (startDate && endDate && (now < startDate || now > endDate)) return;
+                const titleEl = el.querySelector('h4 a[href*="set_contents_id"], h4 a[href*="/contents/"], h4 a');
                 if (!titleEl) return;
                 items.push({
                     title:      titleEl.textContent.trim(),
                     href:       titleEl.getAttribute('href'),
                     category,
-                    startDate:  startDate.toISOString(),
-                    endDate:    endDate.toISOString(),
+                    startDate:  startDate ? startDate.toISOString() : null,
+                    endDate:    endDate ? endDate.toISOString() : null,
                     courseName,
                 });
             });
@@ -391,7 +400,6 @@
                 if (!Array.isArray(courseItems)) return [];
                 const course = COURSES_2Y[i];
                 if (!course) return [];
-                if (loadedMaterialCourses.has(course.id)) return [];
                 return courseItems.filter(item => {
                     if (!item.start_date || !item.end_date) return false;
                     const startDate = new Date(item.start_date);
@@ -421,7 +429,11 @@
                     seen.add(key);
                     return true;
                 })
-                .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+                .sort((a, b) => {
+                    const at = a.startDate ? new Date(a.startDate).getTime() : Number.POSITIVE_INFINITY;
+                    const bt = b.startDate ? new Date(b.startDate).getTime() : Number.POSITIVE_INFINITY;
+                    return at - bt;
+                });
         };
 
         const fetchCourseDocument = async course => {
@@ -642,10 +654,12 @@
                         cat.style.cssText = 'background:#eee;padding:0 3px;border-radius:2px;';
                         metaDiv.appendChild(cat);
                     }
-                    const d = new Date(item.startDate);
-                    const dateEl = document.createElement('span');
-                    dateEl.textContent = `公開 ${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-                    metaDiv.appendChild(dateEl);
+                    if (item.startDate) {
+                        const dateEl = document.createElement('span');
+                        const d = new Date(item.startDate);
+                        dateEl.textContent = `公開 ${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                        metaDiv.appendChild(dateEl);
+                    }
 
                     li.appendChild(courseDiv);
                     li.appendChild(titleDiv);
