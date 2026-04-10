@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      4.3
+// @version      4.9
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
 // @downloadURL  https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
 // @connect      gist.githubusercontent.com
 // @grant        none
+// @inject-into  page
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -42,17 +43,14 @@
         }
     }
 
-    // 全ページ共通：h2.wcl_pageMainTitle が出たら保存（URL問わず）
-    // → mbl.php/textbooks はもちろん、小さいウィンドウ時の別レイアウトにも対応
+    // 全ページ共通：コンテンツタイトルが出たら保存
+    // ※ document.title は使わない（コース名で資料名を上書きしてしまうため）
     {
         const syncTitle = () => {
-            const titleEl = document.querySelector('h2.wcl_pageMainTitle, .cm-contentsShow_title, h1.pageMainTitle');
-            if (titleEl && titleEl.textContent.trim()) {
-                saveChapterTitle(titleEl.textContent);
-                return;
-            }
-            const docTitle = getDocumentTitleCandidate();
-            if (docTitle) saveChapterTitle(docTitle);
+            const titleEl = document.querySelector(
+                'h2.wcl_pageMainTitle, .cm-contentsShow_title, h1.pageMainTitle, #WsTitle h2'
+            );
+            if (titleEl && titleEl.textContent.trim()) saveChapterTitle(titleEl.textContent);
         };
         syncTitle();
         new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
@@ -120,6 +118,70 @@
 
     injectLoaditButton();
     new MutationObserver(injectLoaditButton).observe(document.body, { childList: true, subtree: true });
+
+    // ── PC テキストブックビューア (txtbk_show_text.php) ──────────────────
+    // PC は HTML Frameset + Vue.js 構成。
+    // サイト標準の filedownload() が window.open(url, "download", ...) を呼ぶので
+    // window.open をオーバーライドして wcDownload に差し替える。
+    // ボタンも追加して直接ダウンロードできるようにする。
+    if (location.pathname.includes('txtbk_show_text.php')) {
+        let pdfUrl = null;
+        const jsonEl = document.getElementById('json-data');
+        if (jsonEl) {
+            try {
+                const config    = JSON.parse(jsonEl.textContent);
+                const textUrl   = config.text_url
+                               || Object.values(config.text_urls || {})[0];
+                if (textUrl) {
+                    const params      = new URL(textUrl, location.href).searchParams;
+                    const filePart    = params.get('file')         || '';
+                    const contentsUrl = params.get('contents_url') || '';
+                    if (filePart && contentsUrl) pdfUrl = contentsUrl + filePart;
+                }
+            } catch (_) {}
+        }
+
+        if (pdfUrl) {
+            // window.open をオーバーライドして filedownload() のポップアップを横取り
+            const _origOpen = window.open.bind(window);
+            window.open = function (url, target, features) {
+                if (target === 'download') {
+                    // openurl から file/contents_url を再パースして使う（ページ切り替え対応）
+                    let dlUrl = pdfUrl;
+                    try {
+                        const p = new URL(url, location.href).searchParams;
+                        const f = p.get('file') || '';
+                        const c = p.get('contents_url') || '';
+                        if (f && c) dlUrl = c + f;
+                    } catch (_) {}
+                    wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
+                    return { focus: () => {}, window: { focus: () => {} } };
+                }
+                return _origOpen(url, target, features);
+            };
+
+            // ダウンロードボタンも注入（ナビ横に表示）
+            const injectDlBtn = () => {
+                if (document.getElementById('wc-dl-btn')) return;
+                const btn = document.createElement('input');
+                btn.type  = 'button';
+                btn.id    = 'wc-dl-btn';
+                btn.value = '⬇ ダウンロード';
+                btn.style.cssText = 'margin:4px;padding:4px 10px;cursor:pointer;';
+                btn.addEventListener('click', async () => {
+                    btn.disabled = true;
+                    btn.value    = '取得中…';
+                    try { await wcDownload(pdfUrl); }
+                    catch (err) { alert('ダウンロード失敗: ' + err.message); }
+                    finally { btn.disabled = false; btn.value = '⬇ ダウンロード'; }
+                });
+                const navi = document.getElementById('naviLayout');
+                if (navi) navi.insertAdjacentElement('afterend', btn);
+            };
+            injectDlBtn();
+            new MutationObserver(injectDlBtn).observe(document.body, { childList: true, subtree: true });
+        }
+    }
 
     // ── PC レイアウト：PDF.js の #download ボタンを拾う（同一フレーム内） ──
     // @grant none のため PDFViewerApplication に直接アクセス可能
