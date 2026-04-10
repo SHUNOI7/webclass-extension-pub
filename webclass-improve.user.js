@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      4.9
+// @version      5.0
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -186,18 +186,11 @@
     // ── PC レイアウト：PDF.js の #download ボタンを拾う（同一フレーム内） ──
     // @grant none のため PDFViewerApplication に直接アクセス可能
     document.addEventListener('click', async e => {
-        const pdfBtn    = e.target.closest('#download');
-        const directLink = e.target.closest('a[href]');
+        const pdfBtn = e.target.closest('#download');
+        if (!pdfBtn) return;
 
         let fileUrl = null;
-        if (pdfBtn) {
-            try { fileUrl = window.PDFViewerApplication?.url || window.PDFViewerApplication?.baseUrl; } catch (_) {}
-        } else if (directLink) {
-            const href = directLink.href || '';
-            if (/\.(pdf|pptx?|docx?|xlsx?)(\?|$)/i.test(href) && href.includes('gymnast15.med.kagawa-u.ac.jp')) {
-                fileUrl = href;
-            }
-        }
+        try { fileUrl = window.PDFViewerApplication?.url || window.PDFViewerApplication?.baseUrl; } catch (_) {}
         if (!fileUrl) return;
 
         e.preventDefault();
@@ -206,7 +199,7 @@
         try {
             await wcDownload(fileUrl);
         } catch (_) {
-            if (directLink) directLink.click();
+            pdfBtn.click();
         }
     }, true);
 
