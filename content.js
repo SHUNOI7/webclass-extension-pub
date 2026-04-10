@@ -3,15 +3,7 @@
 
     // ── 講義資料ダウンロード時のファイル名設定 ────────────────────────
     const saveChapterTitle = title => {
-        const normalized = (title || '').replace(/\s+/g, ' ').trim();
-        if (!normalized) return;
-        chrome.storage.local.set({ 'wc-current-chapter': normalized });
-    };
-
-    const getDocumentTitleCandidate = () => {
-        const title = (document.title || '').replace(/\s*-\s*WebClass\s*$/, '').trim();
-        if (!title || /^(WebClass|コースリスト|Teacher Dashboard)$/.test(title)) return '';
-        return title;
+        chrome.storage.local.set({ 'wc-current-chapter': title.trim() });
     };
 
     // PC版：章リストフレーム
@@ -35,24 +27,12 @@
     // → mbl.php/textbooks はもちろん、小さいウィンドウ時の別レイアウトにも対応
     {
         const syncTitle = () => {
-            const titleEl = document.querySelector('h2.wcl_pageMainTitle, .cm-contentsShow_title, h1.pageMainTitle');
-            if (titleEl && titleEl.textContent.trim()) {
-                saveChapterTitle(titleEl.textContent);
-                return;
-            }
-            const docTitle = getDocumentTitleCandidate();
-            if (docTitle) saveChapterTitle(docTitle);
+            const h2 = document.querySelector('h2.wcl_pageMainTitle');
+            if (h2 && h2.textContent.trim()) saveChapterTitle(h2.textContent);
         };
         syncTitle();
         new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
     }
-
-    document.addEventListener('click', e => {
-        const link = e.target.closest('.cm-contentsList_contentName a, a[href*="set_contents_id="], a[href*="/contents/"]');
-        if (!link) return;
-        const text = link.textContent || link.getAttribute('title') || '';
-        if (text.trim()) saveChapterTitle(text);
-    }, true);
 
     // mbl.php/textbooks は PDF パスワード・サイドバー処理不要なので終了
     if (location.pathname.includes('mbl.php/textbooks')) return;

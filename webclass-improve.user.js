@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      4.2
+// @version      4.0
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -16,14 +16,7 @@
 
     // ── 講義資料ダウンロード時のファイル名設定（localStorage版）────────
     const saveChapterTitle = title => {
-        const normalized = (title || '').replace(/\s+/g, ' ').trim();
-        if (normalized) localStorage.setItem('wc-current-chapter', normalized);
-    };
-
-    const getDocumentTitleCandidate = () => {
-        const title = (document.title || '').replace(/\s*-\s*WebClass\s*$/, '').trim();
-        if (!title || /^(WebClass|コースリスト|Teacher Dashboard)$/.test(title)) return '';
-        return title;
+        if (title && title.trim()) localStorage.setItem('wc-current-chapter', title.trim());
     };
 
     // PC版：章リストフレーム（クリックで章切り替え）
@@ -46,24 +39,12 @@
     // → mbl.php/textbooks はもちろん、小さいウィンドウ時の別レイアウトにも対応
     {
         const syncTitle = () => {
-            const titleEl = document.querySelector('h2.wcl_pageMainTitle, .cm-contentsShow_title, h1.pageMainTitle');
-            if (titleEl && titleEl.textContent.trim()) {
-                saveChapterTitle(titleEl.textContent);
-                return;
-            }
-            const docTitle = getDocumentTitleCandidate();
-            if (docTitle) saveChapterTitle(docTitle);
+            const h2 = document.querySelector('h2.wcl_pageMainTitle');
+            if (h2 && h2.textContent.trim()) saveChapterTitle(h2.textContent);
         };
         syncTitle();
         new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
     }
-
-    document.addEventListener('click', e => {
-        const link = e.target.closest('.cm-contentsList_contentName a, a[href*="set_contents_id="], a[href*="/contents/"]');
-        if (!link) return;
-        const text = link.textContent || link.getAttribute('title') || '';
-        if (text.trim()) saveChapterTitle(text);
-    }, true);
 
     // ── ダウンロードユーティリティ ────────────────────────────────────
     const wcDownload = async fileUrl => {
