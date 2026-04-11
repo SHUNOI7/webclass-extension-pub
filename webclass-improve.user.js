@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.2
+// @version      5.3
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -183,78 +183,58 @@
         }
     }
 
-    // ── PC フレームセット (txtbk_frame.php) から子フレームを制御 ──────────
-    // <FRAME> 内に Tampermonkey がインジェクトされない場合に備え、
-    // 同一オリジンの親フレームセットから webclass_content フレームの
-    // filedownload() と window.open を直接上書きする。
-    // Chrome 拡張の background.js と同等の「ダウンロード横取り」をページ側で実現。
+    // ── PC フレームセット (txtbk_frame.php) ─────────────────────────────
+    // モバイルの injectLoaditButton と同じ発想：
+    // トップレベルページ（フレームセット）から同一オリジンの webclass_content
+    // フレームの #json-data を読み取り、PDF URL を取得してダウンロードボタンを注入する。
+    // <FRAME> 内にインジェクトできなくても、フレームセット側から操作できる。
     if (location.pathname.includes('txtbk_frame.php')) {
-        const getPdfUrl = cf => {
-            try {
-                const jsonEl = cf.document.getElementById('json-data');
-                if (!jsonEl) return null;
-                const config  = JSON.parse(jsonEl.textContent);
-                const textUrl = config.text_url || Object.values(config.text_urls || {})[0];
-                if (!textUrl) return null;
-                const p = new URL(textUrl, cf.location.href).searchParams;
-                const f = p.get('file') || '', c = p.get('contents_url') || '';
-                return (f && c) ? c + f : null;
-            } catch (_) { return null; }
-        };
-
-        const applyOverride = () => {
+        const injectPCDlButton = () => {
             try {
                 const cf = window.frames['webclass_content'];
                 if (!cf || !cf.document) return;
 
-                // フレームのナビゲーション後はページスクリプトが filedownload を再定義するため
-                // 毎回上書きする（同じ上書きなら副作用なし）
-                const pdfUrl = getPdfUrl(cf);
-                if (!pdfUrl) return;
+                // PDF URL を取得
+                const jsonEl = cf.document.getElementById('json-data');
+                if (!jsonEl) return;
+                const config  = JSON.parse(jsonEl.textContent);
+                const textUrl = config.text_url || Object.values(config.text_urls || {})[0];
+                if (!textUrl) return;
+                const p = new URL(textUrl, cf.location.href).searchParams;
+                const f = p.get('file') || '', c = p.get('contents_url') || '';
+                if (!f || !c) return;
+                const pdfUrl = c + f;
 
-                // ① filedownload() を直接置き換え（Vue.js がグローバル呼び出しする場合）
-                cf.filedownload = openurl => {
-                    let dlUrl = pdfUrl;
-                    try {
-                        const p = new URL(openurl, cf.location.href).searchParams;
-                        const f = p.get('file') || '', c = p.get('contents_url') || '';
-                        if (f && c) dlUrl = c + f;
-                    } catch (_) {}
-                    wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
-                };
+                // 既存のボタンがあれば URL を更新して終了
+                const existing = document.getElementById('wc-pc-dl-btn');
+                if (existing) { existing.dataset.pdfUrl = pdfUrl; return; }
 
-                // ② window.open も上書き（filedownload 内部で直接 open を呼ぶ場合）
-                if (!cf.__wcOpenOverridden) {
-                    cf.__wcOpenOverridden = true;
-                    const _orig = cf.open.bind(cf);
-                    cf.open = function (url, target, features) {
-                        if (target === 'download') {
-                            let dlUrl = pdfUrl;
-                            try {
-                                const p = new URL(url, cf.location.href).searchParams;
-                                const f = p.get('file') || '', c = p.get('contents_url') || '';
-                                if (f && c) dlUrl = c + f;
-                            } catch (_) {}
-                            wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
-                            return { focus: () => {}, window: { focus: () => {} } };
-                        }
-                        return _orig(url, target, features);
-                    };
-                }
+                // フレームセットページにフローティングボタンを追加
+                const btn = document.createElement('button');
+                btn.id = 'wc-pc-dl-btn';
+                btn.textContent = '⬇ ダウンロード';
+                btn.style.cssText = [
+                    'position:fixed', 'bottom:12px', 'right:12px', 'z-index:9999',
+                    'padding:6px 14px', 'background:#333', 'color:#fff',
+                    'border:none', 'border-radius:4px', 'font-size:13px', 'cursor:pointer',
+                    'box-shadow:0 2px 6px rgba(0,0,0,.4)',
+                ].join(';');
+                btn.dataset.pdfUrl = pdfUrl;
+                btn.addEventListener('click', async () => {
+                    const url = btn.dataset.pdfUrl;
+                    btn.disabled = true; btn.textContent = '取得中…';
+                    try { await wcDownload(url); }
+                    catch (err) { alert('ダウンロード失敗: ' + err.message); }
+                    finally { btn.disabled = false; btn.textContent = '⬇ ダウンロード'; }
+                });
+                (document.body || document.documentElement).appendChild(btn);
             } catch (_) {}
         };
 
-        // フレームロード完了時（ページ切り替えを含む）に上書きを適用
+        // フレームロード完了時（ページ切り替えを含む）にボタンを更新
         const frameEl = document.querySelector('frame[name="webclass_content"]');
-        if (frameEl) {
-            frameEl.addEventListener('load', () => {
-                const cf = window.frames['webclass_content'];
-                if (cf) cf.__wcOpenOverridden = false; // ナビゲーション後はリセット
-                // 少し待ってから適用（ページスクリプト実行後）
-                setTimeout(applyOverride, 100);
-            });
-        }
-        window.addEventListener('load', applyOverride);
+        if (frameEl) frameEl.addEventListener('load', () => setTimeout(injectPCDlButton, 200));
+        window.addEventListener('load', injectPCDlButton);
     }
 
     // ── PC レイアウト：PDF.js の #download ボタンを拾う（同一フレーム内） ──
