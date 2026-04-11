@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.0
+// @version      5.1
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -77,7 +77,8 @@
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement('a');
         a.href = url; a.download = safe + '.' + ext;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        const container = document.body || document.documentElement;
+        container.appendChild(a); a.click(); container.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 2000);
     };
 
@@ -181,6 +182,80 @@
             injectDlBtn();
             new MutationObserver(injectDlBtn).observe(document.body, { childList: true, subtree: true });
         }
+    }
+
+    // ── PC フレームセット (txtbk_frame.php) から子フレームを制御 ──────────
+    // <FRAME> 内に Tampermonkey がインジェクトされない場合に備え、
+    // 同一オリジンの親フレームセットから webclass_content フレームの
+    // filedownload() と window.open を直接上書きする。
+    // Chrome 拡張の background.js と同等の「ダウンロード横取り」をページ側で実現。
+    if (location.pathname.includes('txtbk_frame.php')) {
+        const getPdfUrl = cf => {
+            try {
+                const jsonEl = cf.document.getElementById('json-data');
+                if (!jsonEl) return null;
+                const config  = JSON.parse(jsonEl.textContent);
+                const textUrl = config.text_url || Object.values(config.text_urls || {})[0];
+                if (!textUrl) return null;
+                const p = new URL(textUrl, cf.location.href).searchParams;
+                const f = p.get('file') || '', c = p.get('contents_url') || '';
+                return (f && c) ? c + f : null;
+            } catch (_) { return null; }
+        };
+
+        const applyOverride = () => {
+            try {
+                const cf = window.frames['webclass_content'];
+                if (!cf || !cf.document) return;
+
+                // フレームのナビゲーション後はページスクリプトが filedownload を再定義するため
+                // 毎回上書きする（同じ上書きなら副作用なし）
+                const pdfUrl = getPdfUrl(cf);
+                if (!pdfUrl) return;
+
+                // ① filedownload() を直接置き換え（Vue.js がグローバル呼び出しする場合）
+                cf.filedownload = openurl => {
+                    let dlUrl = pdfUrl;
+                    try {
+                        const p = new URL(openurl, cf.location.href).searchParams;
+                        const f = p.get('file') || '', c = p.get('contents_url') || '';
+                        if (f && c) dlUrl = c + f;
+                    } catch (_) {}
+                    wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
+                };
+
+                // ② window.open も上書き（filedownload 内部で直接 open を呼ぶ場合）
+                if (!cf.__wcOpenOverridden) {
+                    cf.__wcOpenOverridden = true;
+                    const _orig = cf.open.bind(cf);
+                    cf.open = function (url, target, features) {
+                        if (target === 'download') {
+                            let dlUrl = pdfUrl;
+                            try {
+                                const p = new URL(url, cf.location.href).searchParams;
+                                const f = p.get('file') || '', c = p.get('contents_url') || '';
+                                if (f && c) dlUrl = c + f;
+                            } catch (_) {}
+                            wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
+                            return { focus: () => {}, window: { focus: () => {} } };
+                        }
+                        return _orig(url, target, features);
+                    };
+                }
+            } catch (_) {}
+        };
+
+        // フレームロード完了時（ページ切り替えを含む）に上書きを適用
+        const frameEl = document.querySelector('frame[name="webclass_content"]');
+        if (frameEl) {
+            frameEl.addEventListener('load', () => {
+                const cf = window.frames['webclass_content'];
+                if (cf) cf.__wcOpenOverridden = false; // ナビゲーション後はリセット
+                // 少し待ってから適用（ページスクリプト実行後）
+                setTimeout(applyOverride, 100);
+            });
+        }
+        window.addEventListener('load', applyOverride);
     }
 
     // ── PC レイアウト：PDF.js の #download ボタンを拾う（同一フレーム内） ──
