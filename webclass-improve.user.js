@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.5
+// @version      5.6
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -120,22 +120,28 @@
     new MutationObserver(injectLoaditButton).observe(document.body, { childList: true, subtree: true });
 
     // ── PC テキストブック：loadit.php?action=pdfViewer ポップアップ ──────
-    // ダウンロードボタンが window.open で開くポップアップ。
-    // file パラメータに PDF の直接パスが入っている。
-    // localStorage['wc-current-chapter'] のタイトルでリネームしてダウンロード→閉じる。
+    // PDF.js ビューアのポップアップ。ダウンロードボタンは id="downloadButton"。
+    // PDF.js が ESM なので window.PDFViewerApplication は使えない。
+    // capture フェーズで #downloadButton クリックを横取りしてリネームDL。
     if (location.pathname.includes('loadit.php')) {
         const lParams = new URLSearchParams(location.search);
         if (lParams.get('action') === 'pdfViewer') {
             const fileParam = lParams.get('file');
             if (fileParam) {
-                (async () => {
-                    try {
-                        await wcDownload(fileParam);
-                        setTimeout(() => window.close(), 500);
-                    } catch (err) {
-                        console.error('[WC] loadit download error:', err);
-                    }
-                })();
+                const attachOverride = () => {
+                    const btn = document.getElementById('downloadButton');
+                    if (!btn || btn.dataset.wcDl) return;
+                    btn.dataset.wcDl = '1';
+                    btn.addEventListener('click', async e => {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        try { await wcDownload(fileParam); }
+                        catch (err) { console.error('[WC] download error:', err); }
+                    }, true); // capture=true で PDF.js の処理より先に実行
+                };
+                if (document.readyState !== 'loading') attachOverride();
+                else document.addEventListener('DOMContentLoaded', attachOverride);
+                setTimeout(attachOverride, 500); // PDF.js 初期化後も念のため
             }
             return; // 以降のページ機能はポップアップでは不要
         }
