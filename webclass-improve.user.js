@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.3
+// @version      5.4
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -120,66 +120,76 @@
     new MutationObserver(injectLoaditButton).observe(document.body, { childList: true, subtree: true });
 
     // ── PC テキストブックビューア (txtbk_show_text.php) ──────────────────
-    // PC は HTML Frameset + Vue.js 構成。
-    // サイト標準の filedownload() が window.open(url, "download", ...) を呼ぶので
-    // window.open をオーバーライドして wcDownload に差し替える。
-    // ボタンも追加して直接ダウンロードできるようにする。
+    // filedownload() は window.open(openurl, "download", "width=320,height=250") で
+    // 同じ txtbk_show_text.php をポップアップとして開く。
+    // ポップアップはトップレベルウィンドウなので Tampermonkey が必ずインジェクトする。
+    // window.opener で「ポップアップとして開かれた」を検出し、自動ダウンロード。
     if (location.pathname.includes('txtbk_show_text.php')) {
+        // #json-data から PDF URL を取得
         let pdfUrl = null;
-        const jsonEl = document.getElementById('json-data');
-        if (jsonEl) {
-            try {
-                const config    = JSON.parse(jsonEl.textContent);
-                const textUrl   = config.text_url
-                               || Object.values(config.text_urls || {})[0];
+        try {
+            const jsonEl = document.getElementById('json-data');
+            if (jsonEl) {
+                const config  = JSON.parse(jsonEl.textContent);
+                const textUrl = config.text_url || Object.values(config.text_urls || {})[0];
                 if (textUrl) {
-                    const params      = new URL(textUrl, location.href).searchParams;
-                    const filePart    = params.get('file')         || '';
-                    const contentsUrl = params.get('contents_url') || '';
-                    if (filePart && contentsUrl) pdfUrl = contentsUrl + filePart;
+                    const p = new URL(textUrl, location.href).searchParams;
+                    const f = p.get('file') || '', c = p.get('contents_url') || '';
+                    if (f && c) pdfUrl = c + f;
                 }
-            } catch (_) {}
-        }
+            }
+        } catch (_) {}
 
         if (pdfUrl) {
-            // window.open をオーバーライドして filedownload() のポップアップを横取り
-            const _origOpen = window.open.bind(window);
-            window.open = function (url, target, features) {
-                if (target === 'download') {
-                    // openurl から file/contents_url を再パースして使う（ページ切り替え対応）
-                    let dlUrl = pdfUrl;
-                    try {
-                        const p = new URL(url, location.href).searchParams;
-                        const f = p.get('file') || '';
-                        const c = p.get('contents_url') || '';
-                        if (f && c) dlUrl = c + f;
-                    } catch (_) {}
-                    wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
-                    return { focus: () => {}, window: { focus: () => {} } };
-                }
-                return _origOpen(url, target, features);
-            };
-
-            // ダウンロードボタンも注入（ナビ横に表示）
-            const injectDlBtn = () => {
-                if (document.getElementById('wc-dl-btn')) return;
-                const btn = document.createElement('input');
-                btn.type  = 'button';
-                btn.id    = 'wc-dl-btn';
-                btn.value = '⬇ ダウンロード';
-                btn.style.cssText = 'margin:4px;padding:4px 10px;cursor:pointer;';
-                btn.addEventListener('click', async () => {
-                    btn.disabled = true;
-                    btn.value    = '取得中…';
-                    try { await wcDownload(pdfUrl); }
-                    catch (err) { alert('ダウンロード失敗: ' + err.message); }
-                    finally { btn.disabled = false; btn.value = '⬇ ダウンロード'; }
-                });
-                const navi = document.getElementById('naviLayout');
-                if (navi) navi.insertAdjacentElement('afterend', btn);
-            };
-            injectDlBtn();
-            new MutationObserver(injectDlBtn).observe(document.body, { childList: true, subtree: true });
+            if (window.opener) {
+                // ── ポップアップモード ──────────────────────────────────────
+                // filedownload() で開かれた 320×250 のポップアップ。
+                // 自動でリネームダウンロードして閉じる。
+                wcDownload(pdfUrl)
+                    .then(() => setTimeout(() => window.close(), 500))
+                    .catch(err => {
+                        // フォールバック：手動ボタンを表示
+                        const btn = document.createElement('button');
+                        btn.textContent = '⬇ ダウンロード';
+                        btn.style.cssText = 'display:block;margin:10px auto;padding:8px 20px;font-size:14px;cursor:pointer;';
+                        btn.onclick = () => wcDownload(pdfUrl).then(() => window.close()).catch(console.error);
+                        document.body.appendChild(btn);
+                    });
+            } else {
+                // ── フレームモード（フォールバック）────────────────────────
+                // Tampermonkey がフレームにインジェクトできた場合の追加対策。
+                // filedownload() → window.open を横取り。
+                const _origOpen = window.open.bind(window);
+                window.open = function (url, target, features) {
+                    if (target === 'download') {
+                        let dlUrl = pdfUrl;
+                        try {
+                            const p = new URL(url, location.href).searchParams;
+                            const f = p.get('file') || '', c = p.get('contents_url') || '';
+                            if (f && c) dlUrl = c + f;
+                        } catch (_) {}
+                        wcDownload(dlUrl).catch(err => alert('ダウンロード失敗: ' + err.message));
+                        return { focus: () => {}, window: { focus: () => {} } };
+                    }
+                    return _origOpen(url, target, features);
+                };
+                // ダウンロードボタンを注入
+                const injectDlBtn = () => {
+                    if (document.getElementById('wc-dl-btn')) return;
+                    const btn = document.createElement('input');
+                    btn.type = 'button'; btn.id = 'wc-dl-btn'; btn.value = '⬇ DL';
+                    btn.style.cssText = 'margin:4px;padding:4px 10px;cursor:pointer;';
+                    btn.onclick = async () => {
+                        btn.disabled = true; btn.value = '取得中…';
+                        try { await wcDownload(pdfUrl); }
+                        catch (err) { alert('ダウンロード失敗: ' + err.message); }
+                        finally { btn.disabled = false; btn.value = '⬇ DL'; }
+                    };
+                    document.getElementById('naviLayout')?.insertAdjacentElement('afterend', btn);
+                };
+                injectDlBtn();
+                new MutationObserver(injectDlBtn).observe(document.body, { childList: true, subtree: true });
+            }
         }
     }
 
@@ -237,24 +247,38 @@
         window.addEventListener('load', injectPCDlButton);
     }
 
-    // ── PC レイアウト：PDF.js の #download ボタンを拾う（同一フレーム内） ──
-    // @grant none のため PDFViewerApplication に直接アクセス可能
+    // ── txtbk_show_text.php 内の #download ボタンをインターセプト ──────
+    // WebClass の独自 Vue.js ビューアは PDF.js を使わないため
+    // PDFViewerApplication は存在しない。#json-data から PDF URL を取得する。
     document.addEventListener('click', async e => {
         const pdfBtn = e.target.closest('#download');
         if (!pdfBtn) return;
+        if (!location.pathname.includes('txtbk_show_text.php')) return;
 
         let fileUrl = null;
+        // まず PDFViewerApplication を試みる（PDF.js が使われている場合）
         try { fileUrl = window.PDFViewerApplication?.url || window.PDFViewerApplication?.baseUrl; } catch (_) {}
+        // なければ #json-data から取得
+        if (!fileUrl) {
+            try {
+                const jsonEl = document.getElementById('json-data');
+                if (jsonEl) {
+                    const config  = JSON.parse(jsonEl.textContent);
+                    const textUrl = config.text_url || Object.values(config.text_urls || {})[0];
+                    if (textUrl) {
+                        const p = new URL(textUrl, location.href).searchParams;
+                        const f = p.get('file') || '', c = p.get('contents_url') || '';
+                        if (f && c) fileUrl = c + f;
+                    }
+                }
+            } catch (_) {}
+        }
         if (!fileUrl) return;
 
         e.preventDefault();
         e.stopImmediatePropagation();
-
-        try {
-            await wcDownload(fileUrl);
-        } catch (_) {
-            pdfBtn.click();
-        }
+        try { await wcDownload(fileUrl); }
+        catch (_) { pdfBtn.click(); }
     }, true);
 
     // コースページから courseId を保存
