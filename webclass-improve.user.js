@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.4
+// @version      5.5
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -118,6 +118,28 @@
 
     injectLoaditButton();
     new MutationObserver(injectLoaditButton).observe(document.body, { childList: true, subtree: true });
+
+    // ── PC テキストブック：loadit.php?action=pdfViewer ポップアップ ──────
+    // ダウンロードボタンが window.open で開くポップアップ。
+    // file パラメータに PDF の直接パスが入っている。
+    // localStorage['wc-current-chapter'] のタイトルでリネームしてダウンロード→閉じる。
+    if (location.pathname.includes('loadit.php')) {
+        const lParams = new URLSearchParams(location.search);
+        if (lParams.get('action') === 'pdfViewer') {
+            const fileParam = lParams.get('file');
+            if (fileParam) {
+                (async () => {
+                    try {
+                        await wcDownload(fileParam);
+                        setTimeout(() => window.close(), 500);
+                    } catch (err) {
+                        console.error('[WC] loadit download error:', err);
+                    }
+                })();
+            }
+            return; // 以降のページ機能はポップアップでは不要
+        }
+    }
 
     // ── PC テキストブックビューア (txtbk_show_text.php) ──────────────────
     // filedownload() は window.open(openurl, "download", "width=320,height=250") で
