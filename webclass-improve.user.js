@@ -1,18 +1,36 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.7
+// @version      5.8
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
 // @downloadURL  https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
 // @connect      gist.githubusercontent.com
+// @connect      script.google.com
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
 
 (function () {
     'use strict';
+
+    // ── 利用者トラッキング（セッションごとに1回のみ送信）─────────────
+    if (!sessionStorage.getItem('wc-tracked')) {
+        sessionStorage.setItem('wc-tracked', '1');
+        const sendUser = () => {
+            const nameEl = document.querySelector('a[title="アカウントメニュー"] > span');
+            const name = nameEl ? nameEl.textContent.trim() : '';
+            if (!name) return false;
+            fetch('https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?user=' + encodeURIComponent(name), { mode: 'no-cors' });
+            return true;
+        };
+        if (!sendUser()) {
+            // 要素がまだない場合は DOM 構築後に再試行
+            const obs = new MutationObserver(() => { if (sendUser()) obs.disconnect(); });
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+        }
+    }
 
     // ── 講義資料ダウンロード時のファイル名設定（localStorage版）────────
     const saveChapterTitle = title => {
