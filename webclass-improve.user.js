@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      5.8
+// @version      5.9
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -14,6 +14,13 @@
 
 (function () {
     'use strict';
+
+    // ── アクティベーション（初回のみパスワード確認）────────────────────
+    if (!localStorage.getItem('wc-activated')) {
+        const input = window.prompt('WebClass 改善スクリプト\nアクティベーションパスワードを入力してください:');
+        if (input !== '25Mwebclass') return;
+        localStorage.setItem('wc-activated', '1');
+    }
 
     // ── 利用者トラッキング（セッションごとに1回のみ送信）─────────────
     if (!sessionStorage.getItem('wc-tracked')) {
