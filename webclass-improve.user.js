@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.1
+// @version      6.2
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -620,6 +620,9 @@
             });
         };
 
+        // 未確認資料一覧から除外するカテゴリ（自習・課題系）
+        const MATERIAL_EXCLUDED_CATS = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ']);
+
         const getUnreadMaterials = () => {
             const now = Date.now();
             const seen = new Set();
@@ -628,6 +631,7 @@
                     const key = `${item.courseId}:${item.title}`;
                     if (seen.has(key)) return false;
                     seen.add(key);
+                    if (MATERIAL_EXCLUDED_CATS.has(item.category)) return false;
                     return true;
                 })
                 .sort((a, b) => {
