@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.0
+// @version      6.1
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -466,6 +466,7 @@
         const dashboardUrl = `${API}/dashboard`;
         const OVERRIDE_KEY = 'wc-deadline-overrides';
         const RULES_KEY    = 'wc-deadline-rules';
+        const HIDDEN_KEY   = 'wc-hidden-items';
 
         const fmt = d => {
             const m = d.getMonth() + 1;
@@ -486,6 +487,8 @@
         const loadOverrides     = () => { try { return JSON.parse(localStorage.getItem(OVERRIDE_KEY)       || '{}'); } catch { return {}; } };
         const loadRules         = () => { try { return JSON.parse(localStorage.getItem(RULES_KEY)          || '{}'); } catch { return {}; } };
         const loadAnnounceState = () => { try { return JSON.parse(localStorage.getItem(ANNOUNCE_KEY)       || '{}'); } catch { return {}; } };
+        const loadHidden        = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY)         || '[]'); } catch { return []; } };
+        const saveHidden        = arr => localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr));
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
         const COURSE_CACHE_PFX  = 'wc-unread-course-';
@@ -875,6 +878,7 @@
         };
 
         const buildPending = (overrides, rules, now) => {
+            const hidden = new Set(loadHidden());
             const items = [];
             cachedResults.forEach((courseItems, i) => {
                 if (!Array.isArray(courseItems)) return;
@@ -899,6 +903,7 @@
 
                     const submitted = item.scores && item.scores.some(s => s.answer_datetime !== null);
                     if (submitted) return;
+                    if (hidden.has(itemKey)) return;
                     const isFuture = !!(startDate && now < startDate);
                     const isExpired = deadline < now;
                     items.push({
@@ -1007,7 +1012,6 @@
                 settingsBtn.textContent = '⚙';
                 settingsBtn.title = '期限ルール設定';
                 settingsBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.4;line-height:1;';
-                header.appendChild(settingsBtn);
                 el.appendChild(header);
 
                 // ── 設定パネル ──
@@ -1094,8 +1098,73 @@
                     if (!open) buildSettingsPanel();
                     settingsPanel.style.display = open ? 'none' : 'block';
                     settingsBtn.style.opacity = open ? '0.4' : '1';
+                    hiddenPanel.style.display = 'none';
+                    hiddenBtn.style.opacity = '0.4';
                 });
                 el.appendChild(settingsPanel);
+
+                // ── 非表示リストボタン＆パネル ──
+                const hiddenBtn = document.createElement('button');
+                hiddenBtn.title = '非表示にした課題';
+                hiddenBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:12px;padding:0 2px;opacity:0.4;line-height:1;';
+                const updateHiddenBtn = () => {
+                    const n = loadHidden().length;
+                    hiddenBtn.textContent = `🗑${n > 0 ? ' ' + n : ''}`;
+                    hiddenBtn.style.opacity = n > 0 ? '0.7' : '0.3';
+                };
+                updateHiddenBtn();
+                header.appendChild(settingsBtn);
+                header.appendChild(hiddenBtn);
+
+                const hiddenPanel = document.createElement('div');
+                hiddenPanel.style.cssText = 'display:none;border-bottom:1px solid #ddd;background:#f8f8f8;';
+
+                const buildHiddenPanel = () => {
+                    hiddenPanel.innerHTML = '';
+                    const hidden = loadHidden();
+                    if (hidden.length === 0) {
+                        const msg = document.createElement('div');
+                        msg.style.cssText = 'font-size:11px;color:#999;padding:6px 8px;';
+                        msg.textContent = '非表示の課題はありません';
+                        hiddenPanel.appendChild(msg);
+                        return;
+                    }
+                    hidden.forEach(key => {
+                        const row = document.createElement('div');
+                        row.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 6px;border-bottom:1px solid #eee;';
+
+                        const label = document.createElement('span');
+                        label.style.cssText = 'flex:1;font-size:11px;color:#888;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;';
+                        // key = "courseId:課題名" → 課題名だけ表示
+                        label.textContent = key.split(':').slice(1).join(':');
+                        label.title = key;
+
+                        const restoreBtn = document.createElement('button');
+                        restoreBtn.textContent = '↩ 復元';
+                        restoreBtn.style.cssText = 'font-size:10px;padding:1px 6px;border:1px solid #888;border-radius:2px;background:none;cursor:pointer;white-space:nowrap;';
+                        restoreBtn.addEventListener('click', () => {
+                            const h = loadHidden().filter(k => k !== key);
+                            saveHidden(h);
+                            updateHiddenBtn();
+                            buildHiddenPanel();
+                            refresh();
+                        });
+
+                        row.appendChild(label);
+                        row.appendChild(restoreBtn);
+                        hiddenPanel.appendChild(row);
+                    });
+                };
+
+                hiddenBtn.addEventListener('click', () => {
+                    const open = hiddenPanel.style.display !== 'none';
+                    if (!open) buildHiddenPanel();
+                    hiddenPanel.style.display = open ? 'none' : 'block';
+                    hiddenBtn.style.opacity = open ? '0.4' : '1';
+                    settingsPanel.style.display = 'none';
+                    settingsBtn.style.opacity = '0.4';
+                });
+                el.appendChild(hiddenPanel);
 
                 // ── 課題リスト ──
                 if (pending.length === 0) {
@@ -1207,6 +1276,19 @@
                             cancelBtn.addEventListener('click', () => renderDeadlineRow());
                         });
                         deadlineDiv.appendChild(editBtn);
+
+                        const hideBtn = document.createElement('button');
+                        hideBtn.textContent = '×';
+                        hideBtn.title = 'この課題を非表示';
+                        hideBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:10px;padding:0 2px;opacity:0.4;line-height:1;';
+                        hideBtn.addEventListener('click', e => {
+                            e.preventDefault();
+                            const h = loadHidden();
+                            if (!h.includes(itemKey)) h.push(itemKey);
+                            saveHidden(h);
+                            refresh();
+                        });
+                        deadlineDiv.appendChild(hideBtn);
 
                         if (item.isOverridden) {
                             const resetBtn = document.createElement('button');
