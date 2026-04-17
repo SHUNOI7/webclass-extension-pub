@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.3
+// @version      6.4
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -71,7 +71,7 @@
             if (titleEl && titleEl.textContent.trim()) saveChapterTitle(titleEl.textContent);
         };
         syncTitle();
-        new MutationObserver(syncTitle).observe(document.body, { childList: true, subtree: true });
+        new MutationObserver(syncTitle).observe(document.documentElement, { childList: true, subtree: true });
     }
 
     document.addEventListener('click', e => {
@@ -136,7 +136,7 @@
     };
 
     injectLoaditButton();
-    new MutationObserver(injectLoaditButton).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(injectLoaditButton).observe(document.documentElement, { childList: true, subtree: true });
 
     // ── PC テキストブック：loadit.php?action=pdfViewer ポップアップ ──────
     // PDF.js ビューアのポップアップ。ダウンロードボタンは id="downloadButton"。
