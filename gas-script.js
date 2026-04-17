@@ -34,6 +34,26 @@ function doGet(e) {
     return ContentService.createTextOutput('ok');
   }
 
+  if (action === 'get_users') {
+    if (e.parameter.key !== PropertiesService.getScriptProperties().getProperty('ADMIN_KEY')) {
+      return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
+    }
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Users');
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return ContentService.createTextOutput('[]').setMimeType(ContentService.MimeType.JSON);
+    }
+    const data  = sheet.getDataRange().getValues().slice(1); // ヘッダー行をスキップ
+    const users = data
+      .filter(row => row[0] && row[1] && row[2])
+      .map(([email, webclass_id, webclass_password, notify_days]) => ({
+        email, webclass_id, webclass_password,
+        notify_days: Number(notify_days) || 3,
+      }));
+    return ContentService.createTextOutput(JSON.stringify(users))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   // 既存のトラッキング処理
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   sheet.appendRow([
