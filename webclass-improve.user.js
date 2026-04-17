@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.4
+// @version      6.5
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -451,7 +451,7 @@
             }
         };
 
-        new MutationObserver(checkPasswordDialog).observe(document.body, {
+        new MutationObserver(checkPasswordDialog).observe(document.documentElement, {
             childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open'],
         });
         checkPasswordDialog();
@@ -1358,10 +1358,9 @@
             return `${Math.floor(d / 86400000)}日前`;
         };
 
-        const build = anchor => {
-            const view0 = [...document.querySelectorAll('#View-0')].at(-1);
+        const build = (anchor, viewEl) => {
             const wrapper = document.createElement('div');
-            wrapper.className = (view0 ? view0.className + ' ' : '') + 'wc-bbs-section';
+            wrapper.className = (viewEl ? viewEl.className + ' ' : '') + 'wc-bbs-section';
 
             const block = document.createElement('div');
             block.className = 'side-block';
@@ -1471,13 +1470,16 @@
             loadPosts();
         };
 
-        // #View-0 が現れたら1回だけ挿入し、以降は renderUnreadMaterials の DOM 操作に任せる
+        // renderUnreadMaterials と同じく全 #View-0 に対して挿入
         const tryBuild = () => {
+            const views = document.querySelectorAll('#View-0');
+            if (!views.length) return;
             if (document.querySelector('.wc-bbs-section')) return;
-            const anchor = document.querySelector('.wc-unread-material-section') ||
-                           [...document.querySelectorAll('#View-0')].at(-1);
-            if (!anchor) return;
-            build(anchor);
+            views.forEach(view => {
+                const next = view.nextElementSibling;
+                const anchor = (next && next.classList.contains('wc-unread-material-section')) ? next : view;
+                build(anchor, view);
+            });
         };
 
         tryBuild();
