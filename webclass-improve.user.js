@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.5
+// @version      6.6
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -705,7 +705,7 @@
                     const doc = iframe.contentDocument;
                     if (!doc) return;
                     if (phase === 'exit') return finish(parsedItems, true);
-                    if (doc.querySelector('div.cl-contentsList_content') || (doc.readyState === 'complete' && isCourseDocument(doc))) {
+                    if (doc.querySelector('div.cl-contentsList_content') || (doc.readyState !== 'loading' && isCourseDocument(doc))) {
                         parsedItems = parseAndCacheCourse(doc, course.id, course.name);
                         const exitHref = doc.querySelector(`a[href*="/webclass/course.php/${course.id}/logout"]`)?.getAttribute('href');
                         if (exitHref) {
