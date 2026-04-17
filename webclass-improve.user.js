@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.6
+// @version      6.7
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -1424,17 +1424,39 @@
                         list.innerHTML = '<p style="padding:6px 8px;font-size:11px;color:#aaa;">まだ投稿はありません</p>';
                         return;
                     }
-                    posts.forEach(({ ts, msg }) => {
+                    const liked = new Set(JSON.parse(localStorage.getItem('wc-bbs-liked') || '[]'));
+                    posts.forEach(({ ts, msg, likes }) => {
                         const item = document.createElement('div');
                         item.style.cssText = 'padding:6px 8px;border-bottom:1px solid #f0f0f0;';
+
                         const meta = document.createElement('div');
                         meta.style.cssText = 'font-size:10px;color:#999;margin-bottom:2px;';
-                        meta.textContent = `匿名 · ${relTime(ts)}`;
+                        meta.textContent = relTime(ts);
+
                         const text = document.createElement('div');
-                        text.style.cssText = 'font-size:12px;white-space:pre-wrap;word-break:break-word;';
+                        text.style.cssText = 'font-size:12px;white-space:pre-wrap;word-break:break-word;margin-bottom:4px;';
                         text.textContent = msg;
+
+                        const likeBtn = document.createElement('button');
+                        const isLiked = liked.has(ts);
+                        let count = likes;
+                        likeBtn.type = 'button';
+                        likeBtn.textContent = `👍 ${count || ''}`.trim();
+                        likeBtn.style.cssText = `font-size:11px;padding:1px 7px;border-radius:10px;cursor:pointer;border:1px solid ${isLiked ? '#5a9' : '#ccc'};background:${isLiked ? '#e8f5ee' : '#fff'};color:#555;`;
+                        likeBtn.addEventListener('click', () => {
+                            if (liked.has(ts)) return;
+                            liked.add(ts);
+                            localStorage.setItem('wc-bbs-liked', JSON.stringify([...liked]));
+                            count++;
+                            likeBtn.textContent = `👍 ${count}`;
+                            likeBtn.style.borderColor = '#5a9';
+                            likeBtn.style.background = '#e8f5ee';
+                            fetch(`${GAS}?action=bbs_like&ts=${encodeURIComponent(ts)}`).catch(() => {});
+                        });
+
                         item.appendChild(meta);
                         item.appendChild(text);
+                        item.appendChild(likeBtn);
                         list.appendChild(item);
                     });
                 } catch {
