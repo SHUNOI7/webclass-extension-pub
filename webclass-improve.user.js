@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.2
-// @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定
+// @version      6.3
+// @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
 // @downloadURL  https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
 // @connect      gist.githubusercontent.com
 // @connect      script.google.com
+// @connect      script.googleusercontent.com
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -1338,6 +1339,153 @@
         refresh();
         renderAnnouncement();
         renderUnreadMaterials(getUnreadMaterials());
+    })();
+
+    // ── 掲示板 ──────────────────────────────────────────────────────────
+    ;(function () {
+        const GAS = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
+
+        const getUser = () => {
+            const el = document.querySelector('a[title="アカウントメニュー"] > span');
+            return el ? el.textContent.trim() : '';
+        };
+
+        const relTime = iso => {
+            const d = Date.now() - new Date(iso).getTime();
+            if (d < 60000) return 'たった今';
+            if (d < 3600000) return `${Math.floor(d / 60000)}分前`;
+            if (d < 86400000) return `${Math.floor(d / 3600000)}時間前`;
+            return `${Math.floor(d / 86400000)}日前`;
+        };
+
+        const build = anchor => {
+            const view0 = [...document.querySelectorAll('#View-0')].at(-1);
+            const wrapper = document.createElement('div');
+            wrapper.className = (view0 ? view0.className + ' ' : '') + 'wc-bbs-section';
+
+            const block = document.createElement('div');
+            block.className = 'side-block';
+
+            let collapsed = false;
+            const header = document.createElement('h4');
+            header.className = 'side-block-title';
+            header.style.cssText = 'display:flex;align-items:center;cursor:pointer;user-select:none;';
+            const titleSpan = document.createElement('span');
+            titleSpan.style.cssText = 'flex:1;';
+            titleSpan.textContent = '掲示板';
+            const arrow = document.createElement('span');
+            arrow.style.cssText = 'font-size:10px;color:#aaa;';
+            arrow.textContent = '▲';
+            header.appendChild(titleSpan);
+            header.appendChild(arrow);
+
+            const body = document.createElement('div');
+            body.className = 'side-block-content';
+            body.style.cssText = 'padding:0;';
+
+            header.addEventListener('click', () => {
+                collapsed = !collapsed;
+                body.style.display = collapsed ? 'none' : '';
+                arrow.textContent = collapsed ? '▼' : '▲';
+            });
+
+            // 投稿フォーム
+            const formWrap = document.createElement('div');
+            formWrap.style.cssText = 'padding:6px 8px;border-bottom:1px solid #eee;background:#fafafa;';
+            const ta = document.createElement('textarea');
+            ta.placeholder = 'メッセージを入力...';
+            ta.rows = 2;
+            ta.style.cssText = 'width:100%;box-sizing:border-box;font-size:12px;padding:4px;border:1px solid #ccc;border-radius:3px;resize:vertical;font-family:sans-serif;';
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;margin-top:4px;';
+            const reloadBtn = document.createElement('button');
+            reloadBtn.type = 'button';
+            reloadBtn.textContent = '更新';
+            reloadBtn.style.cssText = 'font-size:11px;padding:3px 8px;border:1px solid #999;border-radius:3px;background:#fff;color:#333;cursor:pointer;';
+            const sendBtn = document.createElement('button');
+            sendBtn.type = 'button';
+            sendBtn.textContent = '送信';
+            sendBtn.style.cssText = 'font-size:11px;padding:3px 10px;border:1px solid #5a9;border-radius:3px;background:#5a9;color:#fff;cursor:pointer;';
+            btnRow.appendChild(reloadBtn);
+            btnRow.appendChild(sendBtn);
+            formWrap.appendChild(ta);
+            formWrap.appendChild(btnRow);
+
+            // 投稿一覧
+            const list = document.createElement('div');
+            list.style.cssText = 'max-height:280px;overflow-y:auto;';
+
+            const loadPosts = async () => {
+                list.innerHTML = '<p style="padding:6px 8px;font-size:11px;color:#aaa;">読込中...</p>';
+                try {
+                    const res = await fetch(GAS + '?action=bbs_get');
+                    const posts = await res.json();
+                    list.innerHTML = '';
+                    if (!posts.length) {
+                        list.innerHTML = '<p style="padding:6px 8px;font-size:11px;color:#aaa;">まだ投稿はありません</p>';
+                        return;
+                    }
+                    posts.forEach(({ ts, msg }) => {
+                        const item = document.createElement('div');
+                        item.style.cssText = 'padding:6px 8px;border-bottom:1px solid #f0f0f0;';
+                        const meta = document.createElement('div');
+                        meta.style.cssText = 'font-size:10px;color:#999;margin-bottom:2px;';
+                        meta.textContent = `匿名 · ${relTime(ts)}`;
+                        const text = document.createElement('div');
+                        text.style.cssText = 'font-size:12px;white-space:pre-wrap;word-break:break-word;';
+                        text.textContent = msg;
+                        item.appendChild(meta);
+                        item.appendChild(text);
+                        list.appendChild(item);
+                    });
+                } catch {
+                    list.innerHTML = '<p style="padding:6px 8px;font-size:11px;color:#c44;">読込に失敗しました</p>';
+                }
+            };
+
+            reloadBtn.addEventListener('click', loadPosts);
+
+            sendBtn.addEventListener('click', async () => {
+                const msg = ta.value.trim();
+                if (!msg) return;
+                sendBtn.disabled = true;
+                sendBtn.textContent = '送信中...';
+                try {
+                    await fetch(`${GAS}?action=bbs_post&user=${encodeURIComponent(getUser())}&msg=${encodeURIComponent(msg)}`);
+                    ta.value = '';
+                    await loadPosts();
+                } catch {
+                    alert('送信に失敗しました');
+                } finally {
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = '送信';
+                }
+            });
+
+            body.appendChild(formWrap);
+            body.appendChild(list);
+            block.appendChild(header);
+            block.appendChild(body);
+            wrapper.appendChild(block);
+            anchor.after(wrapper);
+            loadPosts();
+        };
+
+        // #View-0 が現れたら1回だけ挿入し、以降は renderUnreadMaterials の DOM 操作に任せる
+        const tryBuild = () => {
+            if (document.querySelector('.wc-bbs-section')) return;
+            const anchor = document.querySelector('.wc-unread-material-section') ||
+                           [...document.querySelectorAll('#View-0')].at(-1);
+            if (!anchor) return;
+            build(anchor);
+        };
+
+        tryBuild();
+        const obs = new MutationObserver(() => {
+            tryBuild();
+            if (document.querySelector('.wc-bbs-section')) obs.disconnect();
+        });
+        obs.observe(document.documentElement, { childList: true, subtree: true });
     })();
 
     // ── グリッド表示 ────────────────────────────────────────────────
