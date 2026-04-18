@@ -1,13 +1,11 @@
 import { createTransport } from 'nodemailer';
 
-const WEBCLASS      = 'https://gymnast15.med.kagawa-u.ac.jp/webclass';
-const DASHBOARD_API = `${WEBCLASS}/ip_mods.php/plugin/score_summary_table/dashboard`;
-const GAS_URL       = process.env.GAS_URL;
-const GAS_KEY       = process.env.GAS_ADMIN_KEY;
-const GMAIL_USER    = process.env.GMAIL_USER;
-const GMAIL_PASS    = process.env.GMAIL_APP_PASSWORD;
+const WEBCLASS   = 'https://gymnast15.med.kagawa-u.ac.jp/webclass';
+const GAS_URL    = process.env.GAS_URL;
+const GAS_KEY    = process.env.GAS_ADMIN_KEY;
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD;
 
-// COURSES_2Y と同じリスト（Tampermonkey スクリプトと順序を合わせる）
 const COURSES = [
     { id: '8d5215783015764ce951cc9024a8efa9', name: '分子生物学'      },
     { id: 'fdc0989de1e818adafa59ccf8f40c39a', name: '分子遺伝学'      },
@@ -41,25 +39,21 @@ const cookieStr = jar => [...jar.entries()].map(([k, v]) => `${k}=${v}`).join(';
 async function login(id, password) {
     const jar = new Map();
     const loginUrl = `${WEBCLASS}/login.php`;
-
-    // ログインページ取得（セッションクッキー + acs_ トークン取得）
     const r1 = await fetch(loginUrl);
     parseCookies(r1, jar);
     const html = await r1.text();
-    const acsMatch = html.match(/name=["']acs_["']\s+value=["']([^"']+)["']/);
-    const acs = acsMatch?.[1] ?? '';
-
-    // POST ログイン（field 名は WebClass のログインフォームに合わせる）
-    const body = new URLSearchParams({ login_id: id, login_pw: password, acs_: acs });
-    const r2 = await fetch(loginUrl, {
+    const tokenMatch  = html.match(/name=["']token["']\s+value=["']([^"']+)["']/);
+    const token       = tokenMatch?.[1] ?? '';
+    const actionMatch = html.match(/action=["']([^"']*login\.php[^"']*)["']/);
+    const postUrl     = actionMatch ? new URL(actionMatch[1], WEBCLASS).href : loginUrl;
+    const body = new URLSearchParams({ username: id, val: password, login: 'ログイン', useragent: '', language: 'JAPANESE', token });
+    const r2 = await fetch(postUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookieStr(jar) },
         body,
         redirect: 'manual',
     });
     parseCookies(r2, jar);
-
-    // リダイレクトを手動でたどりクッキーを蓄積
     let location = r2.headers.get('location');
     while (location) {
         const url = new URL(location, WEBCLASS).href;
@@ -67,23 +61,49 @@ async function login(id, password) {
         parseCookies(r, jar);
         location = r.headers.get('location');
     }
-
-    return cookieStr(jar);
+    return jar;
 }
 
-// ── ダッシュボード取得 ───────────────────────────────────────────────
-async function fetchDashboard(cookie) {
-    const res = await fetch(DASHBOARD_API, {
-        headers: { Cookie: cookie, Accept: 'application/json' },
-    });
-    if (!res.ok) throw new Error(`dashboard ${res.status}`);
-    return await res.json();
+// ── JSリダイレクトを追跡しながらページ取得 ──────────────────────────
+async function fetchPage(url, jar, depth = 0) {
+    if (depth > 5) throw new Error('too many JS redirects');
+    const r = await fetch(url, { headers: { Cookie: cookieStr(jar) }, redirect: 'follow' });
+    parseCookies(r, jar);
+    const html = await r.text();
+    const jsRedirect = html.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/);
+    if (jsRedirect) return fetchPage(new URL(jsRedirect[1], WEBCLASS).href, jar, depth + 1);
+    return html;
+}
+
+// ── コースページHTMLから課題一覧を抽出 ──────────────────────────────
+function parseCourseHtml(html) {
+    const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
+    const items = [];
+    const blocks = html.split(/(?=<div[^>]+class=['"][^'"]*cl-contentsList_content)/);
+    for (const block of blocks) {
+        if (!block.includes('cl-contentsList_content')) continue;
+        const titleMatch = block.match(/<a[^>]+href[^>]*>([\s\S]*?)<\/a>/);
+        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : null;
+        if (!title) continue;
+        const dates = block.match(/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/g);
+        if (!dates || dates.length < 2) continue;
+        items.push({ title, startDate: new Date(toISO(dates[0])), endDate: new Date(toISO(dates[1])) });
+    }
+    return items;
 }
 
 // ── ユーザー一覧取得（GAS） ──────────────────────────────────────────
 async function getUsers() {
     const res = await fetch(`${GAS_URL}?action=get_users&key=${encodeURIComponent(GAS_KEY)}`);
     if (!res.ok) throw new Error(`get_users ${res.status}`);
+    return await res.json();
+}
+
+// ── ユーザー設定取得（GAS） ──────────────────────────────────────────
+async function getUserSettings(displayName) {
+    if (!displayName) return { overrides: {}, rules: {}, hidden: [] };
+    const res = await fetch(`${GAS_URL}?action=get_settings&key=${encodeURIComponent(GAS_KEY)}&user=${encodeURIComponent(displayName)}`);
+    if (!res.ok) return { overrides: {}, rules: {}, hidden: [] };
     return await res.json();
 }
 
@@ -99,12 +119,9 @@ async function sendMail(to, subject, html) {
 
 // ── メール本文生成 ───────────────────────────────────────────────────
 function buildEmail(upcoming) {
-    const fmt = iso => {
-        const d = new Date(iso);
-        return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    };
+    const fmt = d => `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     const rows = upcoming.map(({ course, title, deadline }) => {
-        const ms = new Date(deadline) - Date.now();
+        const ms = deadline - Date.now();
         const h  = Math.round(ms / 3600000);
         const label = h < 24 ? `<b style="color:#c00">あと${h}時間</b>` : `あと${Math.ceil(h/24)}日`;
         return `<tr><td>${course}</td><td>${title}</td><td>${fmt(deadline)}</td><td>${label}</td></tr>`;
@@ -113,9 +130,7 @@ function buildEmail(upcoming) {
         <p>締め切りが近い課題があります。</p>
         <table border="1" cellpadding="8" cellspacing="0"
                style="border-collapse:collapse;font-size:14px;font-family:sans-serif">
-            <tr style="background:#eee">
-                <th>授業</th><th>課題</th><th>締め切り</th><th>残り</th>
-            </tr>
+            <tr style="background:#eee"><th>授業</th><th>課題</th><th>締め切り</th><th>残り</th></tr>
             ${rows}
         </table>
         <p style="font-size:12px;color:#999;margin-top:16px">
@@ -124,33 +139,50 @@ function buildEmail(upcoming) {
 }
 
 // ── ユーザー1人分の処理 ──────────────────────────────────────────────
-async function processUser({ email, webclass_id, webclass_password, notify_days = 3 }) {
+async function processUser({ email, webclass_id, webclass_password, notify_days = 3, display_name = '' }) {
     console.log(`[${email}] start`);
     try {
-        const cookie   = await login(webclass_id, webclass_password);
-        const results  = await fetchDashboard(cookie);
-        if (!Array.isArray(results)) throw new Error('unexpected dashboard format');
+        const jar      = await login(webclass_id, webclass_password);
+        const settings = await getUserSettings(display_name);
+        const { overrides, rules, hidden } = settings;
+        const hiddenSet   = new Set(Array.isArray(hidden) ? hidden : []);
 
         const threshold = Number(notify_days) * 86400000;
         const now       = Date.now();
         const upcoming  = [];
 
-        results.forEach((courseItems, i) => {
-            if (!Array.isArray(courseItems)) return;
-            const course = COURSES[i];
-            if (!course) return;
-            courseItems.forEach(item => {
-                if (!item.end_date) return;
-                const deadline = new Date(item.end_date).getTime();
-                if (deadline <= now || deadline - now > threshold) return;
-                if (Array.isArray(item.scores) && item.scores.some(s => s.answer_datetime)) return;
-                if (item.hidden_content) return;
-                upcoming.push({ course: course.name, title: item.contents_name, deadline: item.end_date });
-            });
-        });
+        for (const course of COURSES) {
+            const courseUrl = `${WEBCLASS}/course.php/${course.id}/login`;
+            let html;
+            try {
+                html = await fetchPage(courseUrl, jar);
+            } catch (e) {
+                console.warn(`[${email}] skip ${course.name}: ${e.message}`);
+                continue;
+            }
+            const items = parseCourseHtml(html);
+            for (const item of items) {
+                const itemKey = `${course.id}:${item.title}`;
+                if (hiddenSet.has(itemKey)) continue;
+
+                // 拡張機能と同じ締め切り計算ロジック
+                let deadline;
+                if (overrides[itemKey]) {
+                    deadline = new Date(overrides[itemKey]);
+                } else if (rules[course.id] != null) {
+                    deadline = new Date(item.startDate.getTime() + Number(rules[course.id]) * 86400000);
+                } else {
+                    deadline = item.endDate;
+                }
+
+                const ms = deadline.getTime() - now;
+                if (ms <= 0 || ms > threshold) continue;
+                upcoming.push({ course: course.name, title: item.title, deadline });
+            }
+        }
 
         if (!upcoming.length) { console.log(`[${email}] no upcoming deadlines`); return; }
-        upcoming.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+        upcoming.sort((a, b) => a.deadline - b.deadline);
 
         const subject = `【WebClass】締め切り${notify_days}日以内の課題 ${upcoming.length}件`;
         await sendMail(email, subject, buildEmail(upcoming));

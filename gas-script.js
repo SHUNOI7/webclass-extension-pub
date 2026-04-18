@@ -75,9 +75,10 @@ function doGet(e) {
     const data  = sheet.getDataRange().getValues().slice(1); // ヘッダー行をスキップ
     const users = data
       .filter(row => row[0] && row[1] && row[2])
-      .map(([email, webclass_id, webclass_password, notify_days]) => ({
+      .map(([email, webclass_id, webclass_password, notify_days, display_name]) => ({
         email, webclass_id, webclass_password,
         notify_days: Number(notify_days) || 3,
+        display_name: String(display_name || ''),
       }));
     return ContentService.createTextOutput(JSON.stringify(users))
       .setMimeType(ContentService.MimeType.JSON);
