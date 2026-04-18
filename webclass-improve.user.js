@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.7
+// @version      6.8
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -489,7 +489,26 @@
         const loadRules         = () => { try { return JSON.parse(localStorage.getItem(RULES_KEY)          || '{}'); } catch { return {}; } };
         const loadAnnounceState = () => { try { return JSON.parse(localStorage.getItem(ANNOUNCE_KEY)       || '{}'); } catch { return {}; } };
         const loadHidden        = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY)         || '[]'); } catch { return []; } };
-        const saveHidden        = arr => localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr));
+        const saveHidden        = arr => { localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr)); syncSettingsDebounced(); };
+
+        const GAS_SETTINGS = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
+        const getWcUser = () => document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
+        let syncTimer = null;
+        const syncSettingsDebounced = () => {
+            clearTimeout(syncTimer);
+            syncTimer = setTimeout(() => {
+                const user = getWcUser();
+                if (!user) return;
+                const params = new URLSearchParams({
+                    action:    'save_settings',
+                    user,
+                    overrides: localStorage.getItem(OVERRIDE_KEY) || '{}',
+                    rules:     localStorage.getItem(RULES_KEY)    || '{}',
+                    hidden:    localStorage.getItem(HIDDEN_KEY)   || '[]',
+                });
+                fetch(`${GAS_SETTINGS}?${params}`, { mode: 'no-cors' }).catch(() => {});
+            }, 1500);
+        };
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
         const COURSE_CACHE_PFX  = 'wc-unread-course-';
@@ -1053,6 +1072,7 @@
                             if (input.value === '') delete r[c.id];
                             else r[c.id] = parseInt(input.value, 10);
                             localStorage.setItem(RULES_KEY, JSON.stringify(r));
+                            syncSettingsDebounced();
                         });
 
                         const unit = document.createElement('span');
@@ -1275,6 +1295,7 @@
                                 const ov = loadOverrides();
                                 ov[itemKey] = new Date(input.value).toISOString();
                                 localStorage.setItem(OVERRIDE_KEY, JSON.stringify(ov));
+                                syncSettingsDebounced();
                                 refresh();
                             });
 
@@ -1305,6 +1326,7 @@
                                 const ov = loadOverrides();
                                 delete ov[itemKey];
                                 localStorage.setItem(OVERRIDE_KEY, JSON.stringify(ov));
+                                syncSettingsDebounced();
                                 refresh();
                             });
                             deadlineDiv.appendChild(resetBtn);

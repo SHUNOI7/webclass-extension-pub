@@ -34,6 +34,35 @@ function doGet(e) {
     return ContentService.createTextOutput('ok');
   }
 
+  if (action === 'save_settings') {
+    const user      = e.parameter.user || '';
+    const overrides = e.parameter.overrides || '{}';
+    const rules     = e.parameter.rules     || '{}';
+    const hidden    = e.parameter.hidden    || '[]';
+    if (user) {
+      const props = PropertiesService.getScriptProperties();
+      props.setProperty('settings_overrides_' + user, overrides);
+      props.setProperty('settings_rules_'     + user, rules);
+      props.setProperty('settings_hidden_'    + user, hidden);
+    }
+    return ContentService.createTextOutput('ok');
+  }
+
+  if (action === 'get_settings') {
+    if (e.parameter.key !== PropertiesService.getScriptProperties().getProperty('ADMIN_KEY')) {
+      return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
+    }
+    const user  = e.parameter.user || '';
+    const props = PropertiesService.getScriptProperties();
+    const result = {
+      overrides: JSON.parse(props.getProperty('settings_overrides_' + user) || '{}'),
+      rules:     JSON.parse(props.getProperty('settings_rules_'     + user) || '{}'),
+      hidden:    JSON.parse(props.getProperty('settings_hidden_'    + user) || '[]'),
+    };
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   if (action === 'get_users') {
     if (e.parameter.key !== PropertiesService.getScriptProperties().getProperty('ADMIN_KEY')) {
       return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
