@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.8
+// @version      6.9
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -509,6 +509,22 @@
                 fetch(`${GAS_SETTINGS}?${params}`, { mode: 'no-cors' }).catch(() => {});
             }, 1500);
         };
+
+        // ページ読み込み時に1回同期（既存設定をGASへ送る）
+        if (!sessionStorage.getItem('wc-settings-synced')) {
+            sessionStorage.setItem('wc-settings-synced', '1');
+            const doInitialSync = () => {
+                const user = getWcUser();
+                if (!user) return false;
+                syncSettingsDebounced();
+                return true;
+            };
+            if (!doInitialSync()) {
+                const obs = new MutationObserver(() => { if (doInitialSync()) obs.disconnect(); });
+                obs.observe(document.documentElement, { childList: true, subtree: true });
+            }
+        }
+
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
         const COURSE_CACHE_PFX  = 'wc-unread-course-';
