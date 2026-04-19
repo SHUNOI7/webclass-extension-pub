@@ -10,26 +10,33 @@ jobs:
       - name: Install openvpn
         run: sudo apt-get install -y openvpn
 
-      - name: Get VPN Gate config (Japan)
+      - name: Connect VPN Gate (Japan, retry up to 5 servers)
         run: |
           curl -s "https://www.vpngate.net/api/iphone/" \
-            | grep -v "^#" | grep ",JP," | head -1 \
+            | grep -v "^#" | grep ",JP," \
             | awk -F',' '{print $15}' \
-            | tr -d '\r\n ' \
-            | base64 -d > /tmp/vpngate-jp.ovpn
-          echo "Config lines: $(wc -l < /tmp/vpngate-jp.ovpn)"
+            | head -5 > /tmp/vpn_configs_b64.txt
 
-      - name: Connect VPN
-        run: |
-          sudo openvpn \
-            --config /tmp/vpngate-jp.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
-            --daemon
-          sleep 8
-          echo "Current IP: $(curl -s ifconfig.me)"
+          connected=false
+          i=1
+          while IFS= read -r b64; do
+            echo "--- サーバー ${i} 試行中 ---"
+            echo "$b64" | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn 2>/dev/null || { echo "base64失敗"; ((i++)); continue; }
+            sudo openvpn \
+              --config /tmp/vpn.ovpn \
+              --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+              --daemon 2>/dev/null
+            sleep 8
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php 2>/dev/null)
+            echo "WebClass status: $STATUS  IP: $(curl -s ifconfig.me)"
+            if [ "$STATUS" = "200" ]; then
+              echo "SUCCESS (サーバー${i})"
+              connected=true
+              break
+            fi
+            sudo killall openvpn 2>/dev/null
+            sleep 2
+            ((i++))
+          done < /tmp/vpn_configs_b64.txt
 
-      - name: Test WebClass access
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
-          echo "WebClass HTTP status: $STATUS"
-          if [ "$STATUS" = "200" ]; then echo "SUCCESS"; else echo "FAILED"; exit 1; fi
+          if [ "$connected" = "false" ]; then echo "全サーバー失敗"; exit 1; fi
