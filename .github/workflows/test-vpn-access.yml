@@ -16,12 +16,18 @@ jobs:
             | grep -v "^#" | grep ",JP," \
             | awk -F',' '{print $15}' \
             | head -5 > /tmp/vpn_configs_b64.txt
+          echo "取得したサーバー数: $(wc -l < /tmp/vpn_configs_b64.txt)"
 
           connected=false
           i=1
           while IFS= read -r b64; do
             echo "--- サーバー ${i} 試行中 ---"
-            echo "$b64" | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn 2>/dev/null || { echo "base64失敗"; ((i++)); continue; }
+            echo "$b64" | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn 2>/dev/null
+            if [ $? -ne 0 ] || [ ! -s /tmp/vpn.ovpn ]; then
+              echo "base64失敗、スキップ"
+              i=$((i+1)); continue
+            fi
+            echo "設定行数: $(wc -l < /tmp/vpn.ovpn)"
             sudo openvpn \
               --config /tmp/vpn.ovpn \
               --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
@@ -36,7 +42,7 @@ jobs:
             fi
             sudo killall openvpn 2>/dev/null
             sleep 2
-            ((i++))
+            i=$((i+1))
           done < /tmp/vpn_configs_b64.txt
 
           if [ "$connected" = "false" ]; then echo "全サーバー失敗"; exit 1; fi
