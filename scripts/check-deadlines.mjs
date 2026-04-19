@@ -79,14 +79,19 @@ async function fetchPage(url, jar, depth = 0) {
 function parseCourseHtml(html) {
     const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
     const items = [];
-    const blocks = html.split(/(?=<div[^>]+class=['"][^'"]*cl-contentsList_content)/);
+    const blocks = html.split(/(?=<div[^>]+class=['"][^'"]*cl-contentsList_content['"\s])/);
     for (const block of blocks) {
         if (!block.includes('cl-contentsList_content')) continue;
-        const titleMatch = block.match(/<a[^>]+href[^>]*>([\s\S]*?)<\/a>/);
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : null;
+        if (/利用回数/.test(block)) continue;
+        const titleMatch = block.match(/data-contents-name="([^"]+)"/);
+        const title = titleMatch ? titleMatch[1].trim() : null;
         if (!title) continue;
         const dates = block.match(/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/g);
         if (!dates || dates.length < 2) continue;
+        const categoryMatch = block.match(/cl-contentsList_categoryLabel[^>]*>([^<]+)</);
+        const category = categoryMatch ? categoryMatch[1].trim() : '';
+        const TASK_CATS = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ', 'Question']);
+        if (!TASK_CATS.has(category)) continue;
         items.push({ title, startDate: new Date(toISO(dates[0])), endDate: new Date(toISO(dates[1])) });
     }
     return items;
