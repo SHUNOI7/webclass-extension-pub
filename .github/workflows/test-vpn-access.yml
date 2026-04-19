@@ -31,7 +31,7 @@ jobs:
             sudo openvpn \
               --config /tmp/vpn.ovpn \
               --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
-              --daemon
+              --daemon || true
             sleep 8
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php 2>/dev/null)
             echo "WebClass status: $STATUS  IP: $(curl -s ifconfig.me)"
