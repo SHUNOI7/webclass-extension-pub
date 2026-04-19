@@ -10,39 +10,36 @@ jobs:
       - name: Install openvpn
         run: sudo apt-get install -y openvpn
 
-      - name: Connect VPN Gate (Japan, retry up to 5 servers)
+      - name: Get VPN Gate configs (Japan, 5 servers)
         run: |
           curl -s "https://www.vpngate.net/api/iphone/" \
             | grep -v "^#" | grep ",JP," \
             | awk -F',' '{print $15}' \
-            | head -5 > /tmp/vpn_configs_b64.txt
-          echo "取得したサーバー数: $(wc -l < /tmp/vpn_configs_b64.txt)"
+            | head -5 > /tmp/vpn_b64_list.txt
+          echo "取得サーバー数: $(wc -l < /tmp/vpn_b64_list.txt)"
 
-          connected=false
+      - name: Connect VPN (retry up to 5 servers)
+        run: |
+          set +e
           i=1
           while IFS= read -r b64; do
-            echo "--- サーバー ${i} 試行中 ---"
+            echo "--- サーバー ${i} ---"
             echo "$b64" | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn 2>/dev/null
-            if [ $? -ne 0 ] || [ ! -s /tmp/vpn.ovpn ]; then
-              echo "base64失敗、スキップ"
-              i=$((i+1)); continue
-            fi
-            echo "設定行数: $(wc -l < /tmp/vpn.ovpn)"
             sudo openvpn \
               --config /tmp/vpn.ovpn \
               --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
-              --daemon || true
+              --daemon
             sleep 8
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php 2>/dev/null)
-            echo "WebClass status: $STATUS  IP: $(curl -s ifconfig.me)"
+            echo "IP: $(curl -s ifconfig.me)"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
+            echo "WebClass: $STATUS"
             if [ "$STATUS" = "200" ]; then
               echo "SUCCESS (サーバー${i})"
-              connected=true
-              break
+              exit 0
             fi
             sudo killall openvpn 2>/dev/null
             sleep 2
             i=$((i+1))
-          done < /tmp/vpn_configs_b64.txt
-
-          if [ "$connected" = "false" ]; then echo "全サーバー失敗"; exit 1; fi
+          done < /tmp/vpn_b64_list.txt
+          echo "全サーバー失敗"
+          exit 1
