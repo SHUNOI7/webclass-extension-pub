@@ -24,9 +24,12 @@ jobs:
         run: |
           awk 'NR==1{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
           sudo openvpn --config /tmp/vpn.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+            --route-nopull --daemon
           sleep 8
-          echo "IP: $(curl -s ifconfig.me)"
+          WEBCLASS_IP=$(getent hosts gymnast15.med.kagawa-u.ac.jp | awk '{print $1; exit}')
+          sudo ip route add "$WEBCLASS_IP" dev tun0
+          echo "IP (direct): $(curl -s ifconfig.me)"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
           echo "WebClass: $STATUS"
           [ "$STATUS" = "200" ]
@@ -39,9 +42,12 @@ jobs:
           sudo killall openvpn 2>/dev/null || true; sleep 2
           awk 'NR==2{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
           sudo openvpn --config /tmp/vpn.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+            --route-nopull --daemon
           sleep 8
-          echo "IP: $(curl -s ifconfig.me)"
+          WEBCLASS_IP=$(getent hosts gymnast15.med.kagawa-u.ac.jp | awk '{print $1; exit}')
+          sudo ip route add "$WEBCLASS_IP" dev tun0
+          echo "IP (direct): $(curl -s ifconfig.me)"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
           echo "WebClass: $STATUS"
           [ "$STATUS" = "200" ]
@@ -54,9 +60,12 @@ jobs:
           sudo killall openvpn 2>/dev/null || true; sleep 2
           awk 'NR==3{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
           sudo openvpn --config /tmp/vpn.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+            --route-nopull --daemon
           sleep 8
-          echo "IP: $(curl -s ifconfig.me)"
+          WEBCLASS_IP=$(getent hosts gymnast15.med.kagawa-u.ac.jp | awk '{print $1; exit}')
+          sudo ip route add "$WEBCLASS_IP" dev tun0
+          echo "IP (direct): $(curl -s ifconfig.me)"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
           echo "WebClass: $STATUS"
           [ "$STATUS" = "200" ]
@@ -69,9 +78,12 @@ jobs:
           sudo killall openvpn 2>/dev/null || true; sleep 2
           awk 'NR==4{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
           sudo openvpn --config /tmp/vpn.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+            --route-nopull --daemon
           sleep 8
-          echo "IP: $(curl -s ifconfig.me)"
+          WEBCLASS_IP=$(getent hosts gymnast15.med.kagawa-u.ac.jp | awk '{print $1; exit}')
+          sudo ip route add "$WEBCLASS_IP" dev tun0
+          echo "IP (direct): $(curl -s ifconfig.me)"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
           echo "WebClass: $STATUS"
           [ "$STATUS" = "200" ]
@@ -84,9 +96,12 @@ jobs:
           sudo killall openvpn 2>/dev/null || true; sleep 2
           awk 'NR==5{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
           sudo openvpn --config /tmp/vpn.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+            --route-nopull --daemon
           sleep 8
-          echo "IP: $(curl -s ifconfig.me)"
+          WEBCLASS_IP=$(getent hosts gymnast15.med.kagawa-u.ac.jp | awk '{print $1; exit}')
+          sudo ip route add "$WEBCLASS_IP" dev tun0
+          echo "IP (direct): $(curl -s ifconfig.me)"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
           echo "WebClass: $STATUS"
           [ "$STATUS" = "200" ]
