@@ -11,6 +11,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install openvpn
+        run: sudo apt-get install -y openvpn
+
+      - name: Connect VPN Gate (Japan, retry up to 5 servers)
+        run: |
+          curl -s "https://www.vpngate.net/api/iphone/" \
+            | grep -v "^#" | grep ",JP," \
+            | awk -F',' '{print $15}' \
+            | head -5 > /tmp/vpn_configs_b64.txt
+
+          connected=false
+          while IFS= read -r b64; do
+            echo "$b64" | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn 2>/dev/null || continue
+            sudo openvpn \
+              --config /tmp/vpn.ovpn \
+              --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
+              --daemon 2>/dev/null
+            sleep 8
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php 2>/dev/null)
+            if [ "$STATUS" = "200" ]; then
+              echo "VPN connected. IP: $(curl -s ifconfig.me)"
+              connected=true
+              break
+            fi
+            sudo killall openvpn 2>/dev/null
+            sleep 2
+          done < /tmp/vpn_configs_b64.txt
+
+          if [ "$connected" = "false" ]; then
+            echo "All VPN servers failed"
+            exit 1
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
