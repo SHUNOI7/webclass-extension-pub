@@ -10,26 +10,63 @@ jobs:
       - name: Install openvpn
         run: sudo apt-get install -y openvpn
 
-      - name: Get VPN Gate config (Japan)
+      - name: Get VPN Gate configs (Japan, 5 servers)
         run: |
           curl -s "https://www.vpngate.net/api/iphone/" \
-            | grep -v "^#" | grep ",JP," | head -1 \
-            | awk -F',' '{print $15}' \
-            | tr -d '\r\n ' \
-            | base64 -d > /tmp/vpngate-jp.ovpn
-          echo "Config lines: $(wc -l < /tmp/vpngate-jp.ovpn)"
+            | grep -v "^#" | grep ",JP," \
+            | awk -F',' 'NR<=5{print NR, $15}' > /tmp/vpn_list.txt
+          echo "取得サーバー数: $(wc -l < /tmp/vpn_list.txt)"
 
-      - name: Connect VPN
+      - name: Try server 1
+        id: vpn1
+        continue-on-error: true
         run: |
-          sudo openvpn \
-            --config /tmp/vpngate-jp.ovpn \
-            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' \
-            --daemon
+          awk 'NR==1{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
+          sudo openvpn --config /tmp/vpn.ovpn \
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
           sleep 8
-          echo "Current IP: $(curl -s ifconfig.me)"
+          echo "IP: $(curl -s ifconfig.me)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
+          echo "WebClass: $STATUS"
+          [ "$STATUS" = "200" ]
 
-      - name: Test WebClass access
+      - name: Try server 2
+        id: vpn2
+        if: steps.vpn1.outcome == 'failure'
+        continue-on-error: true
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
-          echo "WebClass HTTP status: $STATUS"
-          if [ "$STATUS" = "200" ]; then echo "SUCCESS"; else echo "FAILED"; exit 1; fi
+          sudo killall openvpn 2>/dev/null || true; sleep 2
+          awk 'NR==2{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
+          sudo openvpn --config /tmp/vpn.ovpn \
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+          sleep 8
+          echo "IP: $(curl -s ifconfig.me)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
+          echo "WebClass: $STATUS"
+          [ "$STATUS" = "200" ]
+
+      - name: Try server 3
+        id: vpn3
+        if: steps.vpn1.outcome == 'failure' && steps.vpn2.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          sudo killall openvpn 2>/dev/null || true; sleep 2
+          awk 'NR==3{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
+          sudo openvpn --config /tmp/vpn.ovpn \
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+          sleep 8
+          echo "IP: $(curl -s ifconfig.me)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
+          echo "WebClass: $STATUS"
+          [ "$STATUS" = "200" ]
+
+      - name: Check at least one VPN succeeded
+        run: |
+          if [ "${{ steps.vpn1.outcome }}" = "success" ] || \
+             [ "${{ steps.vpn2.outcome }}" = "success" ] || \
+             [ "${{ steps.vpn3.outcome }}" = "success" ]; then
+            echo "VPN接続成功"
+          else
+            echo "全サーバー失敗"
+            exit 1
+          fi
