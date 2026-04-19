@@ -14,10 +14,11 @@ jobs:
       - name: Install openvpn
         run: sudo apt-get install -y openvpn
 
-      - name: Get VPN Gate configs (Japan, 5 servers)
+      - name: Get VPN Gate configs (Japan top-5 by speed)
         run: |
           curl -s "https://www.vpngate.net/api/iphone/" \
             | grep -v "^#" | grep ",JP," \
+            | sort -t',' -k5 -rn \
             | awk -F',' 'NR<=5{print NR, $15}' > /tmp/vpn_list.txt
           echo "取得サーバー数: $(wc -l < /tmp/vpn_list.txt)"
 
@@ -58,8 +59,34 @@ jobs:
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
           echo "WebClass: $STATUS"; [ "$STATUS" = "200" ]
 
-      - name: Fail if no VPN connected
+      - name: Try VPN server 4
+        id: vpn4
         if: steps.vpn1.outcome == 'failure' && steps.vpn2.outcome == 'failure' && steps.vpn3.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          sudo killall openvpn 2>/dev/null || true; sleep 2
+          awk 'NR==4{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
+          sudo openvpn --config /tmp/vpn.ovpn \
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+          sleep 8
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
+          echo "WebClass: $STATUS"; [ "$STATUS" = "200" ]
+
+      - name: Try VPN server 5
+        id: vpn5
+        if: steps.vpn1.outcome == 'failure' && steps.vpn2.outcome == 'failure' && steps.vpn3.outcome == 'failure' && steps.vpn4.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          sudo killall openvpn 2>/dev/null || true; sleep 2
+          awk 'NR==5{print $2}' /tmp/vpn_list.txt | tr -d '\r\n ' | base64 -d > /tmp/vpn.ovpn
+          sudo openvpn --config /tmp/vpn.ovpn \
+            --data-ciphers 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC' --daemon
+          sleep 8
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 https://gymnast15.med.kagawa-u.ac.jp/webclass/login.php)
+          echo "WebClass: $STATUS"; [ "$STATUS" = "200" ]
+
+      - name: Fail if no VPN connected
+        if: steps.vpn1.outcome == 'failure' && steps.vpn2.outcome == 'failure' && steps.vpn3.outcome == 'failure' && steps.vpn4.outcome == 'failure' && steps.vpn5.outcome == 'failure'
         run: echo "全VPNサーバー失敗" && exit 1
 
       - uses: actions/setup-node@v4
