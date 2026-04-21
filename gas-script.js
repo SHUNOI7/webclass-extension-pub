@@ -35,29 +35,35 @@ function doGet(e) {
   }
 
   if (action === 'save_settings') {
-    const user      = e.parameter.user || '';
+    const user_key  = e.parameter.user_key || '';
+    if (!user_key) return ContentService.createTextOutput('unauthorized');
+    const display_name = getDisplayNameByKey(user_key);
+    if (!display_name) return ContentService.createTextOutput('unauthorized');
     const overrides = e.parameter.overrides || '{}';
     const rules     = e.parameter.rules     || '{}';
     const hidden    = e.parameter.hidden    || '[]';
-    if (user) {
-      const props = PropertiesService.getScriptProperties();
-      props.setProperty('settings_overrides_' + user, overrides);
-      props.setProperty('settings_rules_'     + user, rules);
-      props.setProperty('settings_hidden_'    + user, hidden);
-    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('settings_overrides_' + display_name, overrides);
+    props.setProperty('settings_rules_'     + display_name, rules);
+    props.setProperty('settings_hidden_'    + display_name, hidden);
     return ContentService.createTextOutput('ok');
   }
 
   if (action === 'get_settings') {
-    if (e.parameter.key !== PropertiesService.getScriptProperties().getProperty('ADMIN_KEY')) {
+    const props = PropertiesService.getScriptProperties();
+    let display_name;
+    if (e.parameter.key === props.getProperty('ADMIN_KEY')) {
+      display_name = e.parameter.user || '';
+    } else if (e.parameter.user_key) {
+      display_name = getDisplayNameByKey(e.parameter.user_key);
+      if (!display_name) return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
+    } else {
       return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
     }
-    const user  = e.parameter.user || '';
-    const props = PropertiesService.getScriptProperties();
     const result = {
-      overrides: JSON.parse(props.getProperty('settings_overrides_' + user) || '{}'),
-      rules:     JSON.parse(props.getProperty('settings_rules_'     + user) || '{}'),
-      hidden:    JSON.parse(props.getProperty('settings_hidden_'    + user) || '[]'),
+      overrides: JSON.parse(props.getProperty('settings_overrides_' + display_name) || '{}'),
+      rules:     JSON.parse(props.getProperty('settings_rules_'     + display_name) || '{}'),
+      hidden:    JSON.parse(props.getProperty('settings_hidden_'    + display_name) || '[]'),
     };
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -91,6 +97,17 @@ function doGet(e) {
     e.parameter.user || '不明',
   ]);
   return ContentService.createTextOutput('ok');
+}
+
+function getDisplayNameByKey(user_key) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Users');
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getDataRange().getValues().slice(1);
+  for (const row of data) {
+    if (String(row[5]) === user_key) return String(row[4] || '');
+  }
+  return null;
 }
 
 function getBbsPosts() {

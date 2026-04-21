@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      6.9
+// @version      7.0
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -491,17 +491,17 @@
         const loadHidden        = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY)         || '[]'); } catch { return []; } };
         const saveHidden        = arr => { localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr)); syncSettingsDebounced(); };
 
-        const GAS_SETTINGS = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
-        const getWcUser = () => document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
+        const GAS_SETTINGS    = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
+        const GAS_USER_KEY_LS = 'wc-gas-user-key';
         let syncTimer = null;
         const syncSettingsDebounced = () => {
             clearTimeout(syncTimer);
             syncTimer = setTimeout(() => {
-                const user = getWcUser();
-                if (!user) return;
+                const userKey = localStorage.getItem(GAS_USER_KEY_LS);
+                if (!userKey) return;
                 const params = new URLSearchParams({
                     action:    'save_settings',
-                    user,
+                    user_key:  userKey,
                     overrides: localStorage.getItem(OVERRIDE_KEY) || '{}',
                     rules:     localStorage.getItem(RULES_KEY)    || '{}',
                     hidden:    localStorage.getItem(HIDDEN_KEY)   || '[]',
@@ -510,18 +510,20 @@
             }, 1500);
         };
 
-        // ページ読み込み時に1回同期（既存設定をGASへ送る）
-        if (!sessionStorage.getItem('wc-settings-synced')) {
-            sessionStorage.setItem('wc-settings-synced', '1');
-            const doInitialSync = () => {
-                const user = getWcUser();
-                if (!user) return false;
-                syncSettingsDebounced();
-                return true;
-            };
-            if (!doInitialSync()) {
-                const obs = new MutationObserver(() => { if (doInitialSync()) obs.disconnect(); });
-                obs.observe(document.documentElement, { childList: true, subtree: true });
+        // ページ読み込み時にGASから設定を取得してlocalStorageに反映
+        if (!sessionStorage.getItem('wc-settings-pulled')) {
+            sessionStorage.setItem('wc-settings-pulled', '1');
+            const userKey = localStorage.getItem(GAS_USER_KEY_LS);
+            if (userKey) {
+                fetch(`${GAS_SETTINGS}?action=get_settings&user_key=${encodeURIComponent(userKey)}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => {
+                        if (!data) return;
+                        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(data.overrides ?? {}));
+                        localStorage.setItem(RULES_KEY,    JSON.stringify(data.rules    ?? {}));
+                        localStorage.setItem(HIDDEN_KEY,   JSON.stringify(data.hidden   ?? []));
+                    })
+                    .catch(() => {});
             }
         }
 
@@ -1780,7 +1782,7 @@
     });
 
     const linkBar = document.createElement('div');
-    linkBar.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;';
+    linkBar.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;';
     [
         { label: 'カダサポ',   url: 'https://kyoumusyst.kagawa-u.ac.jp/campusweb/top.do' },
         { label: 'CLEVAS',    url: 'https://cvas.med.kagawa-u.ac.jp/clevas/' },
@@ -1793,6 +1795,20 @@
         a.style.cssText = 'padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;color:#333;text-decoration:none;background:#fff;';
         linkBar.appendChild(a);
     });
+
+    const keyBtn = document.createElement('button');
+    const hasKey = !!localStorage.getItem('wc-gas-user-key');
+    keyBtn.textContent = hasKey ? '🔑 連携済' : '🔑 GAS連携';
+    keyBtn.title = 'デバイス間で設定を同期するキーを設定';
+    keyBtn.style.cssText = 'padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;color:#333;background:#fff;cursor:pointer;';
+    keyBtn.onclick = () => {
+        const current = localStorage.getItem('wc-gas-user-key') || '';
+        const val = prompt('GAS連携キーを入力（Usersシートのuser_key列）:', current);
+        if (val === null) return;
+        localStorage.setItem('wc-gas-user-key', val.trim());
+        keyBtn.textContent = val.trim() ? '🔑 連携済' : '🔑 GAS連携';
+    };
+    linkBar.appendChild(keyBtn);
 
     const gridDiv = document.createElement('div');
     gridDiv.id = 'wc-grid';
