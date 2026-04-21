@@ -76,21 +76,21 @@ async function fetchPage(url, jar, depth = 0) {
 }
 
 // ── コースページHTMLから課題一覧を抽出 ──────────────────────────────
-function parseCourseHtml(html) {
+function parseCourseHtml(html, courseId = '', restored = new Set()) {
     const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
+    const TASK_CATS = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ', 'Question']);
     const items = [];
     const blocks = html.split(/(?=<div[^>]+class=['"][^'"]*cl-contentsList_content['"\s])/);
     for (const block of blocks) {
         if (!block.includes('cl-contentsList_content')) continue;
-        if (/利用回数/.test(block)) continue;
         const titleMatch = block.match(/data-contents-name="([^"]+)"/);
         const title = titleMatch ? titleMatch[1].trim() : null;
         if (!title) continue;
+        if (/利用回数/.test(block) && !restored.has(`${courseId}:${title}`)) continue;
         const dates = block.match(/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/g);
         if (!dates || dates.length < 2) continue;
         const categoryMatch = block.match(/cl-contentsList_categoryLabel[^>]*>([^<]+)</);
         const category = categoryMatch ? categoryMatch[1].trim() : '';
-        const TASK_CATS = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ', 'Question']);
         if (!TASK_CATS.has(category)) continue;
         items.push({ title, startDate: new Date(toISO(dates[0])), endDate: new Date(toISO(dates[1])) });
     }
@@ -149,8 +149,9 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
     try {
         const jar      = await login(webclass_id, webclass_password);
         const settings = await getUserSettings(display_name);
-        const { overrides, rules, hidden } = settings;
-        const hiddenSet   = new Set(Array.isArray(hidden) ? hidden : []);
+        const { overrides, rules, hidden, restored } = settings;
+        const hiddenSet   = new Set(Array.isArray(hidden)   ? hidden   : []);
+        const restoredSet = new Set(Array.isArray(restored) ? restored : []);
 
         const threshold = Number(notify_days) * 86400000;
         const now       = Date.now();
@@ -165,7 +166,7 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
                 console.warn(`[${email}] skip ${course.name}: ${e.message}`);
                 continue;
             }
-            const items = parseCourseHtml(html);
+            const items = parseCourseHtml(html, course.id, restoredSet);
             for (const item of items) {
                 const itemKey = `${course.id}:${item.title}`;
                 if (hiddenSet.has(itemKey)) continue;

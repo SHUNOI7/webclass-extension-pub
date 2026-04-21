@@ -57,9 +57,11 @@ function doGet(e) {
     const overrides = e.parameter.overrides || '{}';
     const rules     = e.parameter.rules     || '{}';
     const hidden    = e.parameter.hidden    || '[]';
+    const restored  = e.parameter.restored  || '[]';
     props.setProperty('settings_overrides_' + user, overrides);
     props.setProperty('settings_rules_'     + user, rules);
     props.setProperty('settings_hidden_'    + user, hidden);
+    props.setProperty('settings_restored_'  + user, restored);
     return ContentService.createTextOutput('ok');
   }
 
@@ -78,6 +80,7 @@ function doGet(e) {
       overrides: JSON.parse(props.getProperty('settings_overrides_' + display_name) || '{}'),
       rules:     JSON.parse(props.getProperty('settings_rules_'     + display_name) || '{}'),
       hidden:    JSON.parse(props.getProperty('settings_hidden_'    + display_name) || '[]'),
+      restored:  JSON.parse(props.getProperty('settings_restored_'  + display_name) || '[]'),
     };
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);

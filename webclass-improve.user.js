@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      7.1
+// @version      7.2
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -490,6 +490,11 @@
         const loadAnnounceState = () => { try { return JSON.parse(localStorage.getItem(ANNOUNCE_KEY)       || '{}'); } catch { return {}; } };
         const loadHidden        = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY)         || '[]'); } catch { return []; } };
         const saveHidden        = arr => { localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr)); syncSettingsDebounced(); };
+        const loadRestored      = () => { try { return new Set(JSON.parse(localStorage.getItem(RESTORED_KEY) || '[]')); } catch { return new Set(); } };
+        const saveRestored      = set => { localStorage.setItem(RESTORED_KEY, JSON.stringify([...set])); syncSettingsDebounced(); };
+        const getViewedItems    = () => COURSES_2Y.flatMap(c => {
+            try { return JSON.parse(localStorage.getItem(VIEWED_KEY_PFX + c.id) || '[]'); } catch { return []; }
+        });
 
         const GAS_SETTINGS  = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
         const WC_USER_KEY   = 'wc-gas-user-key';
@@ -512,9 +517,10 @@
             if (!res.ok) return;
             const data = await res.json();
             if (!data) return;
-            localStorage.setItem(OVERRIDE_KEY, JSON.stringify(data.overrides ?? {}));
-            localStorage.setItem(RULES_KEY,    JSON.stringify(data.rules    ?? {}));
-            localStorage.setItem(HIDDEN_KEY,   JSON.stringify(data.hidden   ?? []));
+            localStorage.setItem(OVERRIDE_KEY,  JSON.stringify(data.overrides ?? {}));
+            localStorage.setItem(RULES_KEY,     JSON.stringify(data.rules    ?? {}));
+            localStorage.setItem(HIDDEN_KEY,    JSON.stringify(data.hidden   ?? []));
+            localStorage.setItem(RESTORED_KEY,  JSON.stringify(data.restored ?? []));
         };
 
         let syncTimer = null;
@@ -528,9 +534,10 @@
                 const params = new URLSearchParams({
                     action:    'save_settings',
                     user_key:  userKey,
-                    overrides: localStorage.getItem(OVERRIDE_KEY) || '{}',
-                    rules:     localStorage.getItem(RULES_KEY)    || '{}',
-                    hidden:    localStorage.getItem(HIDDEN_KEY)   || '[]',
+                    overrides: localStorage.getItem(OVERRIDE_KEY)  || '{}',
+                    rules:     localStorage.getItem(RULES_KEY)     || '{}',
+                    hidden:    localStorage.getItem(HIDDEN_KEY)    || '[]',
+                    restored:  localStorage.getItem(RESTORED_KEY)  || '[]',
                 });
                 fetch(`${GAS_SETTINGS}?${params}`, { mode: 'no-cors' }).catch(() => {});
             }, 1500);
@@ -556,6 +563,8 @@
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
 
         const COURSE_CACHE_PFX  = 'wc-unread-course-';
+        const VIEWED_KEY_PFX    = 'wc-viewed-course-';
+        const RESTORED_KEY      = 'wc-restored-items';
         const UNREAD_CACHE_TTL  = 5 * 60 * 1000;
         const EXCLUDED_CATS     = new Set();
         const MATERIAL_ACS      = document.querySelector('a[href*="acs_="]')?.href?.match(/acs_=([a-f0-9]+)/);
@@ -600,10 +609,15 @@
                     endDate: new Date(toISO(dates[1])),
                 };
             };
+            const viewedItems = [];
             doc.querySelectorAll('div.cl-contentsList_content').forEach(el => {
                 const category = el.querySelector('.cl-contentsList_categoryLabel')?.textContent?.trim() || '';
                 if (EXCLUDED_CATS.has(category)) return;
-                if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) return;
+                if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) {
+                    const titleEl = el.querySelector('h4 a[href*="set_contents_id"], h4 a[href*="/contents/"], h4 a');
+                    if (titleEl) viewedItems.push({ itemKey: `${courseId}:${titleEl.textContent.trim()}`, title: titleEl.textContent.trim(), courseName, category });
+                    return;
+                }
                 const range = extractDateRange(el);
                 const startDate = range?.startDate || null;
                 const endDate = range?.endDate || null;
@@ -620,6 +634,7 @@
                 });
             });
             try { localStorage.setItem(COURSE_CACHE_PFX + courseId, JSON.stringify({ ts: Date.now(), items })); } catch (_) {}
+            try { localStorage.setItem(VIEWED_KEY_PFX + courseId, JSON.stringify(viewedItems)); } catch (_) {}
             return items;
         };
 
@@ -1191,38 +1206,59 @@
                 const buildHiddenPanel = () => {
                     hiddenPanel.innerHTML = '';
                     const hidden = loadHidden();
-                    if (hidden.length === 0) {
+                    const restored = loadRestored();
+                    const viewed = getViewedItems().filter(item => !restored.has(item.itemKey));
+
+                    const makeRow = (labelText, btnText, btnStyle, onClick) => {
+                        const row = document.createElement('div');
+                        row.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 6px;border-bottom:1px solid #eee;';
+                        const label = document.createElement('span');
+                        label.style.cssText = 'flex:1;font-size:11px;color:#888;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;';
+                        label.textContent = labelText;
+                        const btn = document.createElement('button');
+                        btn.textContent = btnText;
+                        btn.style.cssText = `font-size:10px;padding:1px 6px;border:1px solid #888;border-radius:2px;background:none;cursor:pointer;white-space:nowrap;${btnStyle}`;
+                        btn.addEventListener('click', onClick);
+                        row.appendChild(label);
+                        row.appendChild(btn);
+                        return row;
+                    };
+
+                    if (hidden.length === 0 && viewed.length === 0) {
                         const msg = document.createElement('div');
                         msg.style.cssText = 'font-size:11px;color:#999;padding:6px 8px;';
                         msg.textContent = '非表示の課題はありません';
                         hiddenPanel.appendChild(msg);
                         return;
                     }
-                    hidden.forEach(key => {
-                        const row = document.createElement('div');
-                        row.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 6px;border-bottom:1px solid #eee;';
 
-                        const label = document.createElement('span');
-                        label.style.cssText = 'flex:1;font-size:11px;color:#888;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;';
-                        // key = "courseId:課題名" → 課題名だけ表示
-                        label.textContent = key.split(':').slice(1).join(':');
-                        label.title = key;
-
-                        const restoreBtn = document.createElement('button');
-                        restoreBtn.textContent = '↩ 復元';
-                        restoreBtn.style.cssText = 'font-size:10px;padding:1px 6px;border:1px solid #888;border-radius:2px;background:none;cursor:pointer;white-space:nowrap;';
-                        restoreBtn.addEventListener('click', () => {
-                            const h = loadHidden().filter(k => k !== key);
-                            saveHidden(h);
-                            updateHiddenBtn();
-                            buildHiddenPanel();
-                            refresh();
+                    if (hidden.length > 0) {
+                        const sec = document.createElement('div');
+                        sec.style.cssText = 'font-size:10px;color:#aaa;padding:4px 6px 2px;';
+                        sec.textContent = '🙈 手動非表示';
+                        hiddenPanel.appendChild(sec);
+                        hidden.forEach(key => {
+                            hiddenPanel.appendChild(makeRow(
+                                key.split(':').slice(1).join(':'),
+                                '↩ 復元', '',
+                                () => { saveHidden(loadHidden().filter(k => k !== key)); updateHiddenBtn(); buildHiddenPanel(); refresh(); }
+                            ));
                         });
+                    }
 
-                        row.appendChild(label);
-                        row.appendChild(restoreBtn);
-                        hiddenPanel.appendChild(row);
-                    });
+                    if (viewed.length > 0) {
+                        const sec = document.createElement('div');
+                        sec.style.cssText = 'font-size:10px;color:#aaa;padding:4px 6px 2px;margin-top:2px;';
+                        sec.textContent = '👁 閲覧済み（メール通知から除外中）';
+                        hiddenPanel.appendChild(sec);
+                        viewed.forEach(item => {
+                            hiddenPanel.appendChild(makeRow(
+                                `${item.courseName} / ${item.title}`,
+                                '↩ 復活', 'color:#2a6;border-color:#2a6;',
+                                () => { const r = loadRestored(); r.add(item.itemKey); saveRestored(r); buildHiddenPanel(); }
+                            ));
+                        });
+                    }
                 };
 
                 hiddenBtn.addEventListener('click', () => {
