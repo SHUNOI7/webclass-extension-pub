@@ -1839,9 +1839,10 @@
                 if (d?.user_key) { localStorage.setItem('wc-gas-user-key_' + user, d.user_key); userKey = d.user_key; }
             }
             if (!userKey) throw new Error('登録失敗');
-            const res = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=get_settings&user_key=${encodeURIComponent(userKey)}`);
-            if (!res.ok) throw new Error('取得失敗');
-            const data = await res.json();
+            const res  = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=get_settings&user_key=${encodeURIComponent(userKey)}`);
+            const text = await res.text();
+            if (text === 'unauthorized') throw new Error(`認証失敗 (user="${user}", key=${userKey.slice(0,8)}…)`);
+            const data = JSON.parse(text);
             localStorage.setItem('wc-deadline-overrides', JSON.stringify(data.overrides ?? {}));
             localStorage.setItem('wc-deadline-rules',     JSON.stringify(data.rules    ?? {}));
             localStorage.setItem('wc-hidden-items',       JSON.stringify(data.hidden   ?? []));
