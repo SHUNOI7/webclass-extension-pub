@@ -34,17 +34,34 @@ function doGet(e) {
     return ContentService.createTextOutput('ok');
   }
 
+  if (action === 'register') {
+    const user = e.parameter.user || '';
+    if (!user) return ContentService.createTextOutput('{}').setMimeType(ContentService.MimeType.JSON);
+    const props = PropertiesService.getScriptProperties();
+    let userKey = props.getProperty('userkey_' + user);
+    if (!userKey) {
+      userKey = Utilities.getUuid();
+      props.setProperty('userkey_' + user, userKey);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ user_key: userKey }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   if (action === 'save_settings') {
-    const user      = e.parameter.user || '';
+    const props    = PropertiesService.getScriptProperties();
+    const user_key = e.parameter.user_key || '';
+    const user     = user_key ? props.getProperty('username_' + user_key) : (e.parameter.user || '');
+    if (!user) return ContentService.createTextOutput('unauthorized');
+    // user_keyとdisplay_nameの対応を保存（初回）
+    if (user_key && !props.getProperty('username_' + user_key)) {
+      props.setProperty('username_' + user_key, user);
+    }
     const overrides = e.parameter.overrides || '{}';
     const rules     = e.parameter.rules     || '{}';
     const hidden    = e.parameter.hidden    || '[]';
-    if (user) {
-      const props = PropertiesService.getScriptProperties();
-      props.setProperty('settings_overrides_' + user, overrides);
-      props.setProperty('settings_rules_'     + user, rules);
-      props.setProperty('settings_hidden_'    + user, hidden);
-    }
+    props.setProperty('settings_overrides_' + user, overrides);
+    props.setProperty('settings_rules_'     + user, rules);
+    props.setProperty('settings_hidden_'    + user, hidden);
     return ContentService.createTextOutput('ok');
   }
 
@@ -53,8 +70,9 @@ function doGet(e) {
     let display_name;
     if (e.parameter.key === props.getProperty('ADMIN_KEY')) {
       display_name = e.parameter.user || '';
-    } else if (e.parameter.user) {
-      display_name = e.parameter.user;
+    } else if (e.parameter.user_key) {
+      display_name = props.getProperty('username_' + e.parameter.user_key);
+      if (!display_name) return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
     } else {
       return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
     }

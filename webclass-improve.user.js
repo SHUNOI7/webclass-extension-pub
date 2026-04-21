@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WebClass 改善
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      7.1
 // @description  時間割グリッド表示・未提出課題一覧・未確認資料一覧・PDFパスワード自動入力・ダウンロードファイル名自動設定・掲示板
 // @match        https://gymnast15.med.kagawa-u.ac.jp/webclass/*
 // @updateURL    https://raw.githubusercontent.com/SHUNOI7/webclass-extension-pub/main/webclass-improve.user.js
@@ -491,17 +491,43 @@
         const loadHidden        = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY)         || '[]'); } catch { return []; } };
         const saveHidden        = arr => { localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr)); syncSettingsDebounced(); };
 
-        const GAS_SETTINGS = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
-        const getWcUser    = () => document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
+        const GAS_SETTINGS  = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
+        const WC_USER_KEY   = 'wc-gas-user-key';
+        const getWcUser     = () => document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
+
+        const getOrRegister = async user => {
+            let key = localStorage.getItem(WC_USER_KEY + '_' + user);
+            if (key) return key;
+            const res = await fetch(`${GAS_SETTINGS}?action=register&user=${encodeURIComponent(user)}`);
+            const data = res.ok ? await res.json() : null;
+            if (data?.user_key) {
+                localStorage.setItem(WC_USER_KEY + '_' + user, data.user_key);
+                return data.user_key;
+            }
+            return null;
+        };
+
+        const pullSettings = async userKey => {
+            const res = await fetch(`${GAS_SETTINGS}?action=get_settings&user_key=${encodeURIComponent(userKey)}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data) return;
+            localStorage.setItem(OVERRIDE_KEY, JSON.stringify(data.overrides ?? {}));
+            localStorage.setItem(RULES_KEY,    JSON.stringify(data.rules    ?? {}));
+            localStorage.setItem(HIDDEN_KEY,   JSON.stringify(data.hidden   ?? []));
+        };
+
         let syncTimer = null;
         const syncSettingsDebounced = () => {
             clearTimeout(syncTimer);
-            syncTimer = setTimeout(() => {
+            syncTimer = setTimeout(async () => {
                 const user = getWcUser();
                 if (!user) return;
+                const userKey = await getOrRegister(user);
+                if (!userKey) return;
                 const params = new URLSearchParams({
                     action:    'save_settings',
-                    user,
+                    user_key:  userKey,
                     overrides: localStorage.getItem(OVERRIDE_KEY) || '{}',
                     rules:     localStorage.getItem(RULES_KEY)    || '{}',
                     hidden:    localStorage.getItem(HIDDEN_KEY)   || '[]',
@@ -510,27 +536,21 @@
             }, 1500);
         };
 
-        // ページ読み込み時にGASから設定を取得してlocalStorageに反映
+        // ページ読み込み時に登録＆pull（セッション1回）
         if (!sessionStorage.getItem('wc-settings-pulled')) {
             sessionStorage.setItem('wc-settings-pulled', '1');
-            const doPull = () => {
+            const doInitSync = async () => {
                 const user = getWcUser();
                 if (!user) return false;
-                fetch(`${GAS_SETTINGS}?action=get_settings&user=${encodeURIComponent(user)}`)
-                    .then(r => r.ok ? r.json() : null)
-                    .then(data => {
-                        if (!data) return;
-                        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(data.overrides ?? {}));
-                        localStorage.setItem(RULES_KEY,    JSON.stringify(data.rules    ?? {}));
-                        localStorage.setItem(HIDDEN_KEY,   JSON.stringify(data.hidden   ?? []));
-                    })
-                    .catch(() => {});
+                const userKey = await getOrRegister(user);
+                if (userKey) await pullSettings(userKey);
                 return true;
             };
-            if (!doPull()) {
-                const obs = new MutationObserver(() => { if (doPull()) obs.disconnect(); });
+            const tryInit = async () => { if (!await doInitSync()) {
+                const obs = new MutationObserver(async () => { if (await doInitSync()) obs.disconnect(); });
                 obs.observe(document.documentElement, { childList: true, subtree: true });
-            }
+            }};
+            tryInit();
         }
 
         const loadPdfPasswords  = () => { try { return JSON.parse(localStorage.getItem('wc-pdf-passwords') || '{}'); } catch { return {}; } };
@@ -1788,7 +1808,7 @@
     });
 
     const linkBar = document.createElement('div');
-    linkBar.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;';
+    linkBar.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;';
     [
         { label: 'カダサポ',   url: 'https://kyoumusyst.kagawa-u.ac.jp/campusweb/top.do' },
         { label: 'CLEVAS',    url: 'https://cvas.med.kagawa-u.ac.jp/clevas/' },
@@ -1801,6 +1821,39 @@
         a.style.cssText = 'padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;color:#333;text-decoration:none;background:#fff;';
         linkBar.appendChild(a);
     });
+
+    const syncBtn = document.createElement('button');
+    syncBtn.textContent = '↻ 同期';
+    syncBtn.title = '設定をGASと同期して再読み込み';
+    syncBtn.style.cssText = 'padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;color:#333;background:#fff;cursor:pointer;margin-left:auto;';
+    syncBtn.onclick = async () => {
+        syncBtn.disabled = true;
+        syncBtn.textContent = '同期中…';
+        try {
+            const user = document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
+            if (!user) throw new Error('ユーザー取得失敗');
+            let userKey = localStorage.getItem('wc-gas-user-key_' + user);
+            if (!userKey) {
+                const r = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=register&user=${encodeURIComponent(user)}`);
+                const d = r.ok ? await r.json() : null;
+                if (d?.user_key) { localStorage.setItem('wc-gas-user-key_' + user, d.user_key); userKey = d.user_key; }
+            }
+            if (!userKey) throw new Error('登録失敗');
+            const res = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=get_settings&user_key=${encodeURIComponent(userKey)}`);
+            if (!res.ok) throw new Error('取得失敗');
+            const data = await res.json();
+            localStorage.setItem('wc-deadline-overrides', JSON.stringify(data.overrides ?? {}));
+            localStorage.setItem('wc-deadline-rules',     JSON.stringify(data.rules    ?? {}));
+            localStorage.setItem('wc-hidden-items',       JSON.stringify(data.hidden   ?? []));
+            sessionStorage.removeItem('wc-settings-pulled');
+            location.reload();
+        } catch (e) {
+            syncBtn.disabled = false;
+            syncBtn.textContent = '↻ 同期';
+            alert('同期失敗: ' + e.message);
+        }
+    };
+    linkBar.appendChild(syncBtn);
 
 
     const gridDiv = document.createElement('div');
