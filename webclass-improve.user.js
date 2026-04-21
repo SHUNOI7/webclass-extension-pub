@@ -1267,7 +1267,7 @@
                             hiddenPanel.appendChild(makeRow(
                                 `${item.courseName} / ${item.title}`,
                                 '↩ 復活', 'color:#2a6;border-color:#2a6;',
-                                () => { const r = loadRestored(); r.add(item.itemKey); saveRestored(r); buildHiddenPanel(); }
+                                () => { const r = loadRestored(); r.add(item.itemKey); saveRestored(r); buildHiddenPanel(); refresh(); }
                             ));
                         });
                     }
