@@ -615,7 +615,10 @@
                 if (EXCLUDED_CATS.has(category)) return;
                 if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) {
                     const titleEl = el.querySelector('h4 a[href*="set_contents_id"], h4 a[href*="/contents/"], h4 a');
-                    if (titleEl) viewedItems.push({ itemKey: `${courseId}:${titleEl.textContent.trim()}`, title: titleEl.textContent.trim(), courseName, category });
+                    if (titleEl) {
+                        const range = extractDateRange(el);
+                        viewedItems.push({ itemKey: `${courseId}:${titleEl.textContent.trim()}`, title: titleEl.textContent.trim(), courseName, category, endDate: range?.endDate?.toISOString() || null });
+                    }
                     return;
                 }
                 const range = extractDateRange(el);
@@ -1207,7 +1210,8 @@
                     hiddenPanel.innerHTML = '';
                     const hidden = loadHidden();
                     const restored = loadRestored();
-                    const viewed = getViewedItems().filter(item => !restored.has(item.itemKey));
+                    const now2 = Date.now();
+                    const viewed = getViewedItems().filter(item => !restored.has(item.itemKey) && (!item.endDate || new Date(item.endDate).getTime() > now2));
 
                     const makeRow = (labelText, btnText, btnStyle, onClick) => {
                         const row = document.createElement('div');
