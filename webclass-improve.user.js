@@ -1832,12 +1832,10 @@
         try {
             const user = document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
             if (!user) throw new Error('ユーザー取得失敗');
-            let userKey = localStorage.getItem('wc-gas-user-key_' + user);
-            if (!userKey) {
-                const r = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=register&user=${encodeURIComponent(user)}`);
-                const d = r.ok ? await r.json() : null;
-                if (d?.user_key) { localStorage.setItem('wc-gas-user-key_' + user, d.user_key); userKey = d.user_key; }
-            }
+            const r = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=register&user=${encodeURIComponent(user)}`);
+            const rd = r.ok ? await r.json() : null;
+            let userKey = rd?.user_key || null;
+            if (userKey) localStorage.setItem('wc-gas-user-key_' + user, userKey);
             if (!userKey) throw new Error('登録失敗');
             const res  = await fetch(`https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec?action=get_settings&user_key=${encodeURIComponent(userKey)}`);
             const text = await res.text();
