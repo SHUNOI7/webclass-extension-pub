@@ -35,17 +35,16 @@ function doGet(e) {
   }
 
   if (action === 'save_settings') {
-    const user_key  = e.parameter.user_key || '';
-    if (!user_key) return ContentService.createTextOutput('unauthorized');
-    const display_name = getDisplayNameByKey(user_key);
-    if (!display_name) return ContentService.createTextOutput('unauthorized');
+    const user      = e.parameter.user || '';
     const overrides = e.parameter.overrides || '{}';
     const rules     = e.parameter.rules     || '{}';
     const hidden    = e.parameter.hidden    || '[]';
-    const props = PropertiesService.getScriptProperties();
-    props.setProperty('settings_overrides_' + display_name, overrides);
-    props.setProperty('settings_rules_'     + display_name, rules);
-    props.setProperty('settings_hidden_'    + display_name, hidden);
+    if (user) {
+      const props = PropertiesService.getScriptProperties();
+      props.setProperty('settings_overrides_' + user, overrides);
+      props.setProperty('settings_rules_'     + user, rules);
+      props.setProperty('settings_hidden_'    + user, hidden);
+    }
     return ContentService.createTextOutput('ok');
   }
 
@@ -54,9 +53,8 @@ function doGet(e) {
     let display_name;
     if (e.parameter.key === props.getProperty('ADMIN_KEY')) {
       display_name = e.parameter.user || '';
-    } else if (e.parameter.user_key) {
-      display_name = getDisplayNameByKey(e.parameter.user_key);
-      if (!display_name) return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
+    } else if (e.parameter.user) {
+      display_name = e.parameter.user;
     } else {
       return ContentService.createTextOutput('unauthorized').setMimeType(ContentService.MimeType.TEXT);
     }

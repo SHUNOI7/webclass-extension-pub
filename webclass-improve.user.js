@@ -491,17 +491,17 @@
         const loadHidden        = () => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY)         || '[]'); } catch { return []; } };
         const saveHidden        = arr => { localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr)); syncSettingsDebounced(); };
 
-        const GAS_SETTINGS    = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
-        const GAS_USER_KEY_LS = 'wc-gas-user-key';
+        const GAS_SETTINGS = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
+        const getWcUser    = () => document.querySelector('a[title="アカウントメニュー"] > span')?.textContent?.trim() || '';
         let syncTimer = null;
         const syncSettingsDebounced = () => {
             clearTimeout(syncTimer);
             syncTimer = setTimeout(() => {
-                const userKey = localStorage.getItem(GAS_USER_KEY_LS);
-                if (!userKey) return;
+                const user = getWcUser();
+                if (!user) return;
                 const params = new URLSearchParams({
                     action:    'save_settings',
-                    user_key:  userKey,
+                    user,
                     overrides: localStorage.getItem(OVERRIDE_KEY) || '{}',
                     rules:     localStorage.getItem(RULES_KEY)    || '{}',
                     hidden:    localStorage.getItem(HIDDEN_KEY)   || '[]',
@@ -513,9 +513,10 @@
         // ページ読み込み時にGASから設定を取得してlocalStorageに反映
         if (!sessionStorage.getItem('wc-settings-pulled')) {
             sessionStorage.setItem('wc-settings-pulled', '1');
-            const userKey = localStorage.getItem(GAS_USER_KEY_LS);
-            if (userKey) {
-                fetch(`${GAS_SETTINGS}?action=get_settings&user_key=${encodeURIComponent(userKey)}`)
+            const doPull = () => {
+                const user = getWcUser();
+                if (!user) return false;
+                fetch(`${GAS_SETTINGS}?action=get_settings&user=${encodeURIComponent(user)}`)
                     .then(r => r.ok ? r.json() : null)
                     .then(data => {
                         if (!data) return;
@@ -524,6 +525,11 @@
                         localStorage.setItem(HIDDEN_KEY,   JSON.stringify(data.hidden   ?? []));
                     })
                     .catch(() => {});
+                return true;
+            };
+            if (!doPull()) {
+                const obs = new MutationObserver(() => { if (doPull()) obs.disconnect(); });
+                obs.observe(document.documentElement, { childList: true, subtree: true });
             }
         }
 
@@ -1796,19 +1802,6 @@
         linkBar.appendChild(a);
     });
 
-    const keyBtn = document.createElement('button');
-    const hasKey = !!localStorage.getItem('wc-gas-user-key');
-    keyBtn.textContent = hasKey ? '🔑 連携済' : '🔑 GAS連携';
-    keyBtn.title = 'デバイス間で設定を同期するキーを設定';
-    keyBtn.style.cssText = 'padding:4px 10px;border:1px solid #ccc;border-radius:4px;font-size:12px;color:#333;background:#fff;cursor:pointer;';
-    keyBtn.onclick = () => {
-        const current = localStorage.getItem('wc-gas-user-key') || '';
-        const val = prompt('GAS連携キーを入力（Usersシートのuser_key列）:', current);
-        if (val === null) return;
-        localStorage.setItem('wc-gas-user-key', val.trim());
-        keyBtn.textContent = val.trim() ? '🔑 連携済' : '🔑 GAS連携';
-    };
-    linkBar.appendChild(keyBtn);
 
     const gridDiv = document.createElement('div');
     gridDiv.id = 'wc-grid';
