@@ -976,8 +976,9 @@
                         deadline = systemDeadline;
                     }
 
-                    const submitted = item.scores && item.scores.some(s => s.answer_datetime !== null);
-                    if (submitted && !restored.has(itemKey)) return;
+                    const submitted  = item.scores && item.scores.some(s => s.answer_datetime !== null);
+                    const isRestored = restored.has(itemKey);
+                    if (submitted && !isRestored) return;
                     if (hidden.has(itemKey)) return;
                     const isFuture = !!(startDate && now < startDate);
                     const isExpired = deadline < now;
@@ -993,6 +994,7 @@
                         isRuled,
                         isFuture,
                         isExpired,
+                        isRestored,
                     });
                 });
             });
@@ -1395,15 +1397,28 @@
                         });
                         deadlineDiv.appendChild(editBtn);
 
+                        if (item.isRestored) {
+                            const restoredBadge = document.createElement('span');
+                            restoredBadge.textContent = '復活中';
+                            restoredBadge.style.cssText = 'font-size:9px;background:#e67e00;color:#fff;border-radius:2px;padding:0 3px;cursor:default;';
+                            deadlineDiv.appendChild(restoredBadge);
+                        }
+
                         const hideBtn = document.createElement('button');
                         hideBtn.textContent = '×';
-                        hideBtn.title = 'この課題を非表示';
+                        hideBtn.title = item.isRestored ? '復活を解除' : 'この課題を非表示';
                         hideBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:10px;padding:0 2px;opacity:0.4;line-height:1;';
                         hideBtn.addEventListener('click', e => {
                             e.preventDefault();
-                            const h = loadHidden();
-                            if (!h.includes(itemKey)) h.push(itemKey);
-                            saveHidden(h);
+                            if (item.isRestored) {
+                                const r = loadRestored();
+                                r.delete(itemKey);
+                                saveRestored(r);
+                            } else {
+                                const h = loadHidden();
+                                if (!h.includes(itemKey)) h.push(itemKey);
+                                saveHidden(h);
+                            }
                             refresh();
                         });
                         deadlineDiv.appendChild(hideBtn);
