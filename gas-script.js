@@ -43,6 +43,7 @@ function doGet(e) {
       userKey = Utilities.getUuid();
       props.setProperty('userkey_' + user, userKey);
     }
+    props.setProperty('username_' + userKey, user);
     return ContentService.createTextOutput(JSON.stringify({ user_key: userKey }))
       .setMimeType(ContentService.MimeType.JSON);
   }
@@ -50,12 +51,9 @@ function doGet(e) {
   if (action === 'save_settings') {
     const props    = PropertiesService.getScriptProperties();
     const user_key = e.parameter.user_key || '';
-    const user     = user_key ? props.getProperty('username_' + user_key) : (e.parameter.user || '');
+    if (!user_key) return ContentService.createTextOutput('unauthorized');
+    const user = props.getProperty('username_' + user_key);
     if (!user) return ContentService.createTextOutput('unauthorized');
-    // user_keyとdisplay_nameの対応を保存（初回）
-    if (user_key && !props.getProperty('username_' + user_key)) {
-      props.setProperty('username_' + user_key, user);
-    }
     const overrides = e.parameter.overrides || '{}';
     const rules     = e.parameter.rules     || '{}';
     const hidden    = e.parameter.hidden    || '[]';
