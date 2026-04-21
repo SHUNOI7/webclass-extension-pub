@@ -952,7 +952,8 @@
         };
 
         const buildPending = (overrides, rules, now) => {
-            const hidden = new Set(loadHidden());
+            const hidden   = new Set(loadHidden());
+            const restored = loadRestored();
             const items = [];
             cachedResults.forEach((courseItems, i) => {
                 if (!Array.isArray(courseItems)) return;
@@ -976,7 +977,7 @@
                     }
 
                     const submitted = item.scores && item.scores.some(s => s.answer_datetime !== null);
-                    if (submitted) return;
+                    if (submitted && !restored.has(itemKey)) return;
                     if (hidden.has(itemKey)) return;
                     const isFuture = !!(startDate && now < startDate);
                     const isExpired = deadline < now;
@@ -1200,15 +1201,16 @@
                     const restored = loadRestored();
                     const EXCLUDED_FROM_RESTORE = new Set(['Material', 'Forum', 'Questionnaire']);
                     const now2 = Date.now();
+                    const hiddenSet2 = new Set(loadHidden());
                     const viewed = cachedResults ? cachedResults.flatMap((courseItems, i) => {
                         if (!Array.isArray(courseItems)) return [];
                         return courseItems
                             .filter(item => {
                                 if (EXCLUDED_FROM_RESTORE.has(item.contents_kind)) return false;
                                 if (!item.end_date || new Date(item.end_date).getTime() <= now2) return false;
-                                if (item.scores?.some(s => s.answer_datetime !== null)) return false;
+                                if (!item.scores?.some(s => s.answer_datetime !== null)) return false;
                                 const itemKey = `${COURSES_2Y[i].id}:${item.contents_name}`;
-                                if (new Set(loadHidden()).has(itemKey)) return false;
+                                if (hiddenSet2.has(itemKey)) return false;
                                 if (restored.has(itemKey)) return false;
                                 return true;
                             })
