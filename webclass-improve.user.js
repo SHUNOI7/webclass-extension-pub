@@ -1210,8 +1210,13 @@
                     hiddenPanel.innerHTML = '';
                     const hidden = loadHidden();
                     const restored = loadRestored();
+                    const TASK_CATS_VIEW = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ', 'Question']);
                     const now2 = Date.now();
-                    const viewed = getViewedItems().filter(item => !restored.has(item.itemKey) && (!item.endDate || new Date(item.endDate).getTime() > now2));
+                    const viewed = getViewedItems().filter(item =>
+                        TASK_CATS_VIEW.has(item.category) &&
+                        !restored.has(item.itemKey) &&
+                        (!item.endDate || new Date(item.endDate).getTime() > now2)
+                    );
 
                     const makeRow = (labelText, btnText, btnStyle, onClick) => {
                         const row = document.createElement('div');
