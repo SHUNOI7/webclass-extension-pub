@@ -492,9 +492,6 @@
         const saveHidden        = arr => { localStorage.setItem(HIDDEN_KEY, JSON.stringify(arr)); syncSettingsDebounced(); };
         const loadRestored      = () => { try { return new Set(JSON.parse(localStorage.getItem(RESTORED_KEY) || '[]')); } catch { return new Set(); } };
         const saveRestored      = set => { localStorage.setItem(RESTORED_KEY, JSON.stringify([...set])); syncSettingsDebounced(); };
-        const getViewedItems    = () => COURSES_2Y.flatMap(c => {
-            try { return JSON.parse(localStorage.getItem(VIEWED_KEY_PFX + c.id) || '[]'); } catch { return []; }
-        });
 
         const GAS_SETTINGS  = 'https://script.google.com/macros/s/AKfycbyWmwlscAtSUgjNVExXFzgecdKGa6f0VAUFxoPLJAj5hV9Mf27ziPe8n5Qvtd6bglIb/exec';
         const WC_USER_KEY   = 'wc-gas-user-key';
@@ -609,18 +606,10 @@
                     endDate: new Date(toISO(dates[1])),
                 };
             };
-            const viewedItems = [];
             doc.querySelectorAll('div.cl-contentsList_content').forEach(el => {
                 const category = el.querySelector('.cl-contentsList_categoryLabel')?.textContent?.trim() || '';
                 if (EXCLUDED_CATS.has(category)) return;
-                if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) {
-                    const titleEl = el.querySelector('h4 a[href*="set_contents_id"], h4 a[href*="/contents/"], h4 a');
-                    if (titleEl) {
-                        const range = extractDateRange(el);
-                        viewedItems.push({ itemKey: `${courseId}:${titleEl.textContent.trim()}`, title: titleEl.textContent.trim(), courseName, category, endDate: range?.endDate?.toISOString() || null });
-                    }
-                    return;
-                }
+                if ([...el.querySelectorAll('a')].some(a => /利用回数/.test(a.textContent))) return;
                 const range = extractDateRange(el);
                 const startDate = range?.startDate || null;
                 const endDate = range?.endDate || null;
@@ -637,7 +626,6 @@
                 });
             });
             try { localStorage.setItem(COURSE_CACHE_PFX + courseId, JSON.stringify({ ts: Date.now(), items })); } catch (_) {}
-            try { localStorage.setItem(VIEWED_KEY_PFX + courseId, JSON.stringify(viewedItems)); } catch (_) {}
             return items;
         };
 
@@ -1210,13 +1198,26 @@
                     hiddenPanel.innerHTML = '';
                     const hidden = loadHidden();
                     const restored = loadRestored();
-                    const TASK_CATS_VIEW = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ', 'Question']);
+                    const EXCLUDED_FROM_RESTORE = new Set(['Material', 'Forum', 'Questionnaire']);
                     const now2 = Date.now();
-                    const viewed = getViewedItems().filter(item =>
-                        TASK_CATS_VIEW.has(item.category) &&
-                        !restored.has(item.itemKey) &&
-                        (!item.endDate || new Date(item.endDate).getTime() > now2)
-                    );
+                    const viewed = cachedResults ? cachedResults.flatMap((courseItems, i) => {
+                        if (!Array.isArray(courseItems)) return [];
+                        return courseItems
+                            .filter(item => {
+                                if (EXCLUDED_FROM_RESTORE.has(item.contents_kind)) return false;
+                                if (!item.end_date || new Date(item.end_date).getTime() <= now2) return false;
+                                if (item.scores?.some(s => s.answer_datetime !== null)) return false;
+                                const itemKey = `${COURSES_2Y[i].id}:${item.contents_name}`;
+                                if (new Set(loadHidden()).has(itemKey)) return false;
+                                if (restored.has(itemKey)) return false;
+                                return true;
+                            })
+                            .map(item => ({
+                                itemKey: `${COURSES_2Y[i].id}:${item.contents_name}`,
+                                title: item.contents_name,
+                                courseName: COURSES_2Y[i].name,
+                            }));
+                    }) : [];
 
                     const makeRow = (labelText, btnText, btnStyle, onClick) => {
                         const row = document.createElement('div');
