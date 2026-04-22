@@ -152,6 +152,7 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
         const { overrides, rules, hidden, restored } = settings;
         const hiddenSet   = new Set(Array.isArray(hidden)   ? hidden   : []);
         const restoredSet = new Set(Array.isArray(restored) ? restored : []);
+        console.log(`[${email}] restored: ${JSON.stringify([...restoredSet])}`);
 
         const threshold = Number(notify_days) * 86400000;
         const now       = Date.now();
@@ -167,6 +168,7 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
                 continue;
             }
             const items = parseCourseHtml(html, course.id, restoredSet);
+            if (course.name.includes('解剖')) console.log(`[${email}] ${course.name}: ${items.map(i => i.title).join(', ') || '0件'}`);
             for (const item of items) {
                 const itemKey = `${course.id}:${item.title}`;
                 if (hiddenSet.has(itemKey)) continue;
