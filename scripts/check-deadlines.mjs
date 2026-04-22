@@ -86,7 +86,10 @@ function parseCourseHtml(html, courseId = '', restored = new Set()) {
         const titleMatch = block.match(/data-contents-name="([^"]+)"/);
         const title = titleMatch ? titleMatch[1].trim() : null;
         if (!title) continue;
-        if (/利用回数/.test(block) && !restored.has(`${courseId}:${title}`)) continue;
+        if (/利用回数/.test(block)) {
+            if (courseId === '6b114e2b135f7aac169bc428f00951aa') console.log(`[利用回数ブロック] title="${title}" key="${courseId}:${title}" restored=${restored.has(`${courseId}:${title}`)}`);
+            if (!restored.has(`${courseId}:${title}`)) continue;
+        }
         const dates = block.match(/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/g);
         if (!dates || dates.length < 2) continue;
         const categoryMatch = block.match(/cl-contentsList_categoryLabel[^>]*>([^<]+)</);
