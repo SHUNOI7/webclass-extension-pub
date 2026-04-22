@@ -79,6 +79,13 @@ async function fetchPage(url, jar, depth = 0) {
     return html;
 }
 
+// ── APIの日付文字列をJSTとして解析 ──────────────────────────────────
+const parseJST = s => {
+    if (!s) return null;
+    if (/[Z+\-]\d{2}:?\d{2}$/.test(s) || s.endsWith('Z')) return new Date(s);
+    return new Date(s + '+09:00');
+};
+
 // ── コースAPIから課題一覧を取得 ─────────────────────────────────────
 async function fetchCourseItems(courseId, jar) {
     const res = await fetch(`${API}/contents?group_id=${courseId}`, {
@@ -173,9 +180,9 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
                 if (overrides[itemKey]) {
                     deadline = new Date(overrides[itemKey]);
                 } else if (rules[course.id] != null) {
-                    deadline = new Date(new Date(item.start_date).getTime() + Number(rules[course.id]) * 86400000);
+                    deadline = new Date(parseJST(item.start_date).getTime() + Number(rules[course.id]) * 86400000);
                 } else {
-                    deadline = new Date(item.end_date);
+                    deadline = parseJST(item.end_date);
                 }
 
                 const ms = deadline.getTime() - now;
