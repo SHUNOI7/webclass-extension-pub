@@ -1,6 +1,7 @@
 import { createTransport } from 'nodemailer';
 
 const WEBCLASS   = 'https://gymnast15.med.kagawa-u.ac.jp/webclass';
+const API        = `${WEBCLASS}/ip_mods.php/plugin/score_summary_table`;
 const GAS_URL    = process.env.GAS_URL;
 const GAS_KEY    = process.env.GAS_ADMIN_KEY;
 const GMAIL_USER = process.env.GMAIL_USER;
@@ -23,6 +24,9 @@ const COURSES = [
     { id: '6b114e2b135f7aac169bc428f00951aa', name: '解剖学Ⅱ'       },
     { id: 'aea2184cf7cd67f5ea205f70e8a9a8ab', name: '解剖学Ⅰ'       },
 ];
+
+// 拡張機能と同じカテゴリフィルタ（APIの contents_kind 値）
+const TASK_KINDS = new Set(['Report', 'Quiz', 'Question']);
 
 // ── cookie ユーティリティ ────────────────────────────────────────────
 function parseCookies(res, jar = new Map()) {
@@ -64,7 +68,7 @@ async function login(id, password) {
     return jar;
 }
 
-// ── JSリダイレクトを追跡しながらページ取得 ──────────────────────────
+// ── JSリダイレクトを追跡しながらページ取得（コースセッション確立用）──
 async function fetchPage(url, jar, depth = 0) {
     if (depth > 5) throw new Error('too many JS redirects');
     const r = await fetch(url, { headers: { Cookie: cookieStr(jar) }, redirect: 'follow' });
@@ -75,29 +79,13 @@ async function fetchPage(url, jar, depth = 0) {
     return html;
 }
 
-// ── コースページHTMLから課題一覧を抽出 ──────────────────────────────
-function parseCourseHtml(html, courseId = '', restored = new Set()) {
-    const toISO = s => s.replace(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2})/, '$1-$2-$3T$4:$5');
-    const TASK_CATS = new Set(['自習', '課題', 'レポート', 'Report', 'Quiz', 'クイズ', 'Question']);
-    const items = [];
-    const blocks = html.split(/(?=<div[^>]+class=['"][^'"]*cl-contentsList_content['"\s])/);
-    for (const block of blocks) {
-        if (!block.includes('cl-contentsList_content')) continue;
-        const titleMatch = block.match(/data-contents-name="([^"]+)"/);
-        const title = titleMatch ? titleMatch[1].trim() : null;
-        if (!title) continue;
-        if (/利用回数/.test(block)) {
-            if (courseId === '6b114e2b135f7aac169bc428f00951aa') console.log(`[利用回数ブロック] title="${title}" key="${courseId}:${title}" restored=${restored.has(`${courseId}:${title}`)}`);
-            if (!restored.has(`${courseId}:${title}`)) continue;
-        }
-        const dates = block.match(/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/g);
-        if (!dates || dates.length < 2) continue;
-        const categoryMatch = block.match(/cl-contentsList_categoryLabel[^>]*>([^<]+)</);
-        const category = categoryMatch ? categoryMatch[1].trim() : '';
-        if (!TASK_CATS.has(category)) continue;
-        items.push({ title, startDate: new Date(toISO(dates[0])), endDate: new Date(toISO(dates[1])) });
-    }
-    return items;
+// ── コースAPIから課題一覧を取得 ─────────────────────────────────────
+async function fetchCourseItems(courseId, jar) {
+    const res = await fetch(`${API}/contents?group_id=${courseId}`, {
+        headers: { Cookie: cookieStr(jar) },
+    });
+    if (!res.ok) return [];
+    try { return await res.json(); } catch { return []; }
 }
 
 // ── ユーザー一覧取得（GAS） ──────────────────────────────────────────
@@ -155,40 +143,44 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
         const { overrides, rules, hidden, restored } = settings;
         const hiddenSet   = new Set(Array.isArray(hidden)   ? hidden   : []);
         const restoredSet = new Set(Array.isArray(restored) ? restored : []);
-        console.log(`[${email}] restored: ${JSON.stringify([...restoredSet])}`);
 
         const threshold = Number(notify_days) * 86400000;
         const now       = Date.now();
         const upcoming  = [];
 
         for (const course of COURSES) {
-            const courseUrl = `${WEBCLASS}/course.php/${course.id}/login`;
-            let html;
+            // コースセッションを確立してからAPIを呼ぶ
             try {
-                html = await fetchPage(courseUrl, jar);
+                await fetchPage(`${WEBCLASS}/course.php/${course.id}/login`, jar);
             } catch (e) {
                 console.warn(`[${email}] skip ${course.name}: ${e.message}`);
                 continue;
             }
-            const items = parseCourseHtml(html, course.id, restoredSet);
-            if (course.name.includes('解剖')) console.log(`[${email}] ${course.name}: ${items.map(i => i.title).join(', ') || '0件'}`);
-            for (const item of items) {
-                const itemKey = `${course.id}:${item.title}`;
+
+            const apiItems = await fetchCourseItems(course.id, jar);
+            for (const item of apiItems) {
+                if (!TASK_KINDS.has(item.contents_kind)) continue;
+                if (!item.start_date || !item.end_date) continue;
+
+                const itemKey  = `${course.id}:${item.contents_name}`;
                 if (hiddenSet.has(itemKey)) continue;
 
-                // 拡張機能と同じ締め切り計算ロジック
+                const submitted  = Array.isArray(item.scores) && item.scores.some(s => s.answer_datetime !== null);
+                const isRestored = restoredSet.has(itemKey);
+                if (submitted && !isRestored) continue;
+
                 let deadline;
                 if (overrides[itemKey]) {
                     deadline = new Date(overrides[itemKey]);
                 } else if (rules[course.id] != null) {
-                    deadline = new Date(item.startDate.getTime() + Number(rules[course.id]) * 86400000);
+                    deadline = new Date(new Date(item.start_date).getTime() + Number(rules[course.id]) * 86400000);
                 } else {
-                    deadline = item.endDate;
+                    deadline = new Date(item.end_date);
                 }
 
                 const ms = deadline.getTime() - now;
                 if (ms <= 0 || ms > threshold) continue;
-                upcoming.push({ course: course.name, title: item.title, deadline });
+                upcoming.push({ course: course.name, title: item.contents_name, deadline });
             }
         }
 
