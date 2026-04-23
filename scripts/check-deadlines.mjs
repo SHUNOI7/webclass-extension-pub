@@ -123,7 +123,7 @@ async function sendMail(to, subject, html) {
 }
 
 // ── メール本文生成 ───────────────────────────────────────────────────
-function buildEmail(upcoming) {
+function buildEmail(upcoming, displayName = '') {
     const fmt = d => {
         const jst = new Date(d.getTime() + 9 * 3600000);
         return `${jst.getUTCMonth()+1}/${jst.getUTCDate()} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')}`;
@@ -135,6 +135,7 @@ function buildEmail(upcoming) {
         return `<tr><td>${course}</td><td>${title}</td><td>${fmt(deadline)}</td><td>${label}</td></tr>`;
     }).join('');
     return `
+        ${displayName ? `<p>${displayName}さん</p>` : ''}
         <p>締め切りが近い課題があります。</p>
         <table border="1" cellpadding="8" cellspacing="0"
                style="border-collapse:collapse;font-size:14px;font-family:sans-serif">
@@ -200,7 +201,7 @@ async function processUser({ email, webclass_id, webclass_password, notify_days 
         upcoming.sort((a, b) => a.deadline - b.deadline);
 
         const subject = `【WebClass】締め切り${notify_days}日以内の課題 ${upcoming.length}件`;
-        await sendMail(email, subject, buildEmail(upcoming));
+        await sendMail(email, subject, buildEmail(upcoming, display_name));
         console.log(`[${email}] sent ${upcoming.length} items`);
     } catch (err) {
         console.error(`[${email}] error:`, err.message);
