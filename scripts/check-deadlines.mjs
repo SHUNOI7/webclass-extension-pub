@@ -88,11 +88,13 @@ const parseJST = s => {
 
 // ── コースAPIから課題一覧を取得 ─────────────────────────────────────
 async function fetchCourseItems(courseId, jar) {
-    const res = await fetch(`${API}/contents?group_id=${courseId}`, {
-        headers: { Cookie: cookieStr(jar) },
-    });
-    if (!res.ok) return [];
-    try { return await res.json(); } catch { return []; }
+    try {
+        const res = await fetch(`${API}/contents?group_id=${courseId}`, {
+            headers: { Cookie: cookieStr(jar) },
+        });
+        if (!res.ok) return [];
+        return await res.json();
+    } catch { return []; }
 }
 
 // ── ユーザー一覧取得（GAS） ──────────────────────────────────────────
