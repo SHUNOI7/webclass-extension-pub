@@ -124,7 +124,10 @@ async function sendMail(to, subject, html) {
 
 // ── メール本文生成 ───────────────────────────────────────────────────
 function buildEmail(upcoming) {
-    const fmt = d => `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const fmt = d => {
+        const jst = new Date(d.getTime() + 9 * 3600000);
+        return `${jst.getUTCMonth()+1}/${jst.getUTCDate()} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')}`;
+    };
     const rows = upcoming.map(({ course, title, deadline }) => {
         const ms = deadline - Date.now();
         const h  = Math.round(ms / 3600000);
